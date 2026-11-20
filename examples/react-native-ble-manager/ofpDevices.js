@@ -1,4 +1,6 @@
 // OFP in a React Native app that scans with react-native-ble-manager (Android).
+// iOS has no company-id filter: there the scan is opened and filtered by the app (`scanOptionsFor(..., 'ios')`,
+// `appCanRead`), in the foreground only. See "Getting through a filtered scan" in docs/integrating.md.
 //
 // This is how the TrainerDay mobile app does it, with our own app's names taken out. Two kinds of
 // lines: the ones marked SAME FOR EVERYONE you can copy; the ones marked YOUR APP call into your

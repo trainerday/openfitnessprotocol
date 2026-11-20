@@ -34,7 +34,11 @@ The four hooks are a few lines each. What took more in our apps, and may or may 
   connected-device object, so an OFP device needs a stand-in with the same properties. An app whose
   devices are just "a source of readings" needs none.
 - **Getting through a filtered scan** (phone): our scan is limited to fitness services; on Android a
-  company-id filter is added beside them. iOS cannot filter by company id.
+  company-id filter is added beside them. iOS cannot filter by company id: there the scan is opened to
+  every device, with repeats, when it could matter (the rider is looking for devices, or an OFP device is
+  paired or in use), and the app drops the results its own filter would not have let through
+  (`scanOptionsFor(..., 'ios')` and `appCanRead` in the react-native-ble-manager adapter). iOS hands
+  over nothing from such a scan in the background, so a broadcast-only device is read in the foreground only.
 
 In our apps the wiring is one file each, about 250 and 300 lines with comments.
 

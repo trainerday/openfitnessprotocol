@@ -195,6 +195,19 @@ test('adapter: react-native-ble-manager', () => {
   assert.deepEqual(rn.scanOptionsFor(ofp, 'in_use', 2), { manufacturerData: { manufacturerId: 0x0102 }, scanMode: 2 })
   assert.deepEqual(rn.scanOptionsFor(ofp, 'waiting', 2), { manufacturerData: { manufacturerId: 0x0102 } })
   assert.deepEqual(rn.scanOptionsFor({ companyIds: [] }, null, 2), {})
+  // iOS: no company-id filter, so the scan is opened and repeats are asked for
+  assert.deepEqual(rn.scanOptionsFor(ofp, 'in_use', 2, 'ios'), { serviceUUIDs: [], allowDuplicates: true })
+  assert.deepEqual(rn.scanOptionsFor(ofp, null, 2, 'ios'), { serviceUUIDs: [], allowDuplicates: true })
+  // ...and the app's own filter is applied to the results
+  const services = ['1826', '180d', '1818', 'A026EE01-0A7D-4AB3-97FA-F1500F9FEB8B']
+  assert.equal(rn.appCanRead({ advertising: { serviceUUIDs: ['1818'] } }, services), true)
+  assert.equal(rn.appCanRead({ advertising: { serviceUUIDs: ['00001826-0000-1000-8000-00805f9b34fb'] } }, services), true)
+  assert.equal(rn.appCanRead({ advertising: { serviceUUIDs: ['a026ee01-0a7d-4ab3-97fa-f1500f9feb8b'] } }, services), true)
+  assert.equal(rn.appCanRead({ advertising: { overflowServiceUUIDs: ['180d'] } }, services), true)
+  // a headset, a phone, a television
+  assert.equal(rn.appCanRead({ advertising: { serviceUUIDs: ['fe2c'] } }, services), false)
+  assert.equal(rn.appCanRead({ advertising: {} }, services), false)
+  assert.equal(rn.appCanRead({}, services), false)
 })
 
 test('adapter: noble', () => {
