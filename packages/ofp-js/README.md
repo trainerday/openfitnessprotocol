@@ -1,4 +1,25 @@
-# ofp (JavaScript)
+# @openfitnessprotocol/ofp
+
+Open Fitness Protocol for JavaScript apps: read fitness devices from your app's own Bluetooth (heart rate
+straps, power meters, speed and cadence sensors, FTMS bikes, rowers and treadmills, and devices the
+community adds as tables). Reading only: OFP never controls a device. Apache-2.0, no dependencies.
+Project and device list: https://openfitnessprotocol.org
+
+```sh
+npm install @openfitnessprotocol/ofp
+```
+
+| Import | What it is |
+|---|---|
+| `@openfitnessprotocol/ofp` | `Ofp` (the four hooks), `wasmEngine`, `moduleEngine`, helpers |
+| `@openfitnessprotocol/ofp/core/ofp_core.wasm` | the core as WebAssembly (Electron, browsers, Node) |
+| `@openfitnessprotocol/ofp/core/js` | the same core as plain JavaScript, for runtimes without WebAssembly (React Native's Hermes): `moduleEngine(require(...))` |
+| `@openfitnessprotocol/ofp/registry` | the device tables, as text (`export default`); `.../registry.bundle.json` is the same file |
+| `@openfitnessprotocol/ofp/adapters/noble`, `.../react-native-ble-manager` | helpers for those Bluetooth libraries |
+
+New devices come with a new version of this package: no code of yours changes.
+
+## Usage
 
 Open Fitness Protocol for JavaScript apps: the OFP core and the four hooks an app wires up. No
 dependencies.

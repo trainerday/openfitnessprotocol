@@ -1,7 +1,7 @@
 {
-  "name": "ofp",
+  "name": "@openfitnessprotocol/ofp",
   "version": "0.2.1",
-  "description": "Open Fitness Protocol for JavaScript apps: the core (WebAssembly, or plain JavaScript where there is no WebAssembly) and the few hooks an app wires up.",
+  "description": "Open Fitness Protocol: read fitness devices (heart rate, power, FTMS bikes, rowers, treadmills and more) from any JavaScript app. The core (WebAssembly, or plain JavaScript for React Native), the device tables, and the four hooks an app wires up.",
   "license": "Apache-2.0",
   "type": "module",
   "main": "index.js",
@@ -9,7 +9,12 @@
   "files": [
     "index.js",
     "index.d.ts",
-    "adapters"
+    "adapters",
+    "core",
+    "registry.js",
+    "registry.bundle.json",
+    "LICENSE",
+    "NOTICE"
   ],
   "exports": {
     ".": {
@@ -17,9 +22,39 @@
       "default": "./index.js"
     },
     "./adapters/noble": "./adapters/noble.js",
-    "./adapters/react-native-ble-manager": "./adapters/react-native-ble-manager.js"
+    "./adapters/react-native-ble-manager": "./adapters/react-native-ble-manager.js",
+    "./core/ofp_core.wasm": "./core/ofp_core.wasm",
+    "./core/js": "./core/ofp_core.asm.js",
+    "./registry": "./registry.js",
+    "./registry.bundle.json": "./registry.bundle.json",
+    "./package.json": "./package.json"
   },
   "scripts": {
     "test": "node --test test/ofp.test.js"
+  },
+  "homepage": "https://openfitnessprotocol.org",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/trainerday/openfitnessprotocol.git",
+    "directory": "packages/ofp-js"
+  },
+  "bugs": {
+    "url": "https://github.com/trainerday/openfitnessprotocol/issues"
+  },
+  "keywords": [
+    "bluetooth",
+    "ble",
+    "fitness",
+    "ftms",
+    "heart-rate",
+    "cycling",
+    "power-meter",
+    "indoor-bike",
+    "rower",
+    "react-native",
+    "electron"
+  ],
+  "publishConfig": {
+    "access": "public"
   }
 }
