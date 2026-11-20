@@ -52,6 +52,7 @@ function page({ path, title, description, body }) {
 <meta property="og:title" content="${esc(title)}">
 <meta property="og:description" content="${esc(description)}">
 <link rel="stylesheet" href="/style.css">
+<script defer src="https://webstats.trainerday.com/script.js" data-website-id="1c6ebc3e-1f85-49fe-8b57-699df4a580e4" data-domains="openfitnessprotocol.org"></script>
 </head>
 <body>
 <header class="top"><div class="wrap">
