@@ -1,7 +1,7 @@
 //! The Studio behind HTTP, on this computer only.
 
 use crate::studio::{Config, FieldReq, ProposeReq, Reply, Studio};
-use axum::extract::State;
+use axum::extract::{Query, State};
 use axum::http::{header, StatusCode};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
@@ -43,6 +43,11 @@ fn reply(r: Reply) -> Response {
         Ok(v) => Json(v).into_response(),
         Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
     }
+}
+
+#[derive(Deserialize)]
+struct NameReq {
+    name: String,
 }
 
 #[derive(Deserialize)]
@@ -129,6 +134,15 @@ pub fn router(studio: Arc<Studio>, radio: mpsc::UnboundedSender<Radio>, has_radi
         .route("/api/state", get(|State(a): State<App>| async move { Json(a.studio.state_json()) }))
         .route("/api/devices", get(|State(a): State<App>| async move { Json(a.studio.devices_json()) }))
         .route("/api/captures", get(|State(a): State<App>| async move { Json(a.studio.captures_json()) }))
+        .route(
+            "/api/captures/download",
+            get(|State(a): State<App>, Query(q): Query<NameReq>| async move {
+                match a.studio.saved_recording(&q.name) {
+                    Ok(text) => ([(header::CONTENT_TYPE, "application/x-ndjson".to_string()), (header::CONTENT_DISPOSITION, format!("attachment; filename=\"{}\"", q.name))], text).into_response(),
+                    Err(e) => reply(Err(e)),
+                }
+            }),
+        )
         .route(
             "/api/capture/file",
             get(|State(a): State<App>| async move {

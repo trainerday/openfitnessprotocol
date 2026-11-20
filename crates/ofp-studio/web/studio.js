@@ -1204,7 +1204,9 @@ function viewMyRecordings() {
     const button = h('button', { class: 'small', onclick: (e) => sendRecording(c, e.currentTarget) }, 'Send');
     return h('div', { class: 'rec-row' },
       h('div', { class: 'rec-what' }, h('b', {}, d.device), h('span', { class: 'muted' }, d.when + (c.kb ? ` · ${c.kb} KB` : ''))),
-      code ? h('span', { class: 'rec-sent' }, '✓ Sent · ', h('span', { class: 'mono' }, code)) : button);
+      h('div', { class: 'row rec-actions' },
+        h('a', { class: 'btn small', href: '/api/captures/download?name=' + encodeURIComponent(c.name), download: c.name, onclick: () => toast('Saved to your Downloads folder') }, 'Download'),
+        code ? h('span', { class: 'rec-sent' }, '✓ Sent · ', h('span', { class: 'mono' }, code)) : button));
   });
   return h('div', { class: 'simple-page' },
     h('div', { class: 'row', style: 'justify-content:space-between; align-items:baseline' },

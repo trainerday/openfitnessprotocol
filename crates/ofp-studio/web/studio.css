@@ -200,3 +200,5 @@ body:not(.simple) #my-recordings { display: none; }
 .switch input { margin: 0; }
 #my-recordings { line-height: 1; padding: 0; align-self: center; }
 header .switch { margin: 0; }
+.rec-actions { gap: 10px; align-items: center; flex-wrap: nowrap; }
+a.btn.small { font-size: 12px; padding: 3px 8px; text-decoration: none; }

@@ -106,6 +106,16 @@ fn main() {
                 .inner_size(1280.0, 860.0)
                 .min_inner_size(900.0, 600.0)
                 // The window is the Studio only: a link to anywhere else opens in the browser
+                .on_download(|webview, event| {
+                    // a recording the person downloads: into their Downloads folder, under its own name
+                    if let tauri::webview::DownloadEvent::Requested { url, destination } = event {
+                        let name = url.query_pairs().find(|(k, _)| k == "name").map(|(_, v)| v.into_owned()).unwrap_or_else(|| "recording.capture.jsonl".into());
+                        if let Ok(dir) = webview.path().download_dir() {
+                            *destination = dir.join(name);
+                        }
+                    }
+                    true
+                })
                 .on_navigation(|to| {
                     let ours = matches!(to.scheme(), "data" | "about") || to.host_str() == Some("127.0.0.1");
                     if !ours {

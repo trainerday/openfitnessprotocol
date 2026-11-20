@@ -333,6 +333,14 @@ impl Studio {
         json!(out)
     }
 
+    /// One saved recording, by its file name, from the captures folder only (a name with a path in it is refused).
+    pub fn saved_recording(&self, name: &str) -> Result<String, String> {
+        if name.contains('/') || name.contains('\\') || name.contains("..") || !name.ends_with(".capture.jsonl") {
+            return Err("Not a recording's name.".into());
+        }
+        std::fs::read_to_string(self.cfg.captures.join(name)).map_err(|_| format!("{name}: no such recording"))
+    }
+
     // ───────────── session ─────────────
 
     pub fn open_device(&self, device_id: &str) -> Reply {
