@@ -93,3 +93,12 @@ button.no { border-color: var(--bad); color: var(--bad); }
 .verdict.good { color: var(--good); } .verdict.bad { color: var(--bad); }
 a.btn { text-decoration: none; display: inline-block; }
 .tile .desc { font-size: 12px; min-height: 30px; margin-top: 4px; }
+.live-status { margin: 4px 2px 18px; }
+.live-status .big { font-size: 26px; font-weight: 700; line-height: 1.25; }
+.live-status.listening .big::before, .live-status.receiving .big::before { content: ''; display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 10px; vertical-align: 3px; }
+.live-status.listening .big::before { background: var(--accent); animation: pulse 1.2s infinite; }
+.live-status.receiving .big { color: var(--good); }
+.live-status.receiving .big::before { background: var(--good); }
+.live-status.quiet .big { color: var(--bad); }
+.live-status.stopped .big { color: var(--muted); }
+.tile .value.none { font-size: 16px; font-weight: 500; color: var(--muted); margin: 22px 0; }

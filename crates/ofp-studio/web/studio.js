@@ -132,6 +132,7 @@ function connectEvents() {
     switch (m.type) {
       case 'devices': S.devices = m.devices; if (S.tab === 'devices') renderDevicesTable(); break;
       case 'packet':
+        S.lastPacketAt = Date.now();
         if (S.capture) S.capture.packets.push([m.t, m.stream, m.hex]);
         if (m.stream !== 'adv') Tester.onPacket(m.t, m.stream, m.hex);
         if (!S.stream) { S.stream = m.stream; render(); } else renderSoon();
@@ -141,7 +142,7 @@ function connectEvents() {
       case 'confirm': if (S.capture) S.capture.confirms.push(m); renderSoon(); break;
       case 'source': S.live.source = m.source; if (S.tab === 'live') renderTiles(); break;
       case 'values': Object.assign(S.live.values, m.fields); S.live.stale = !!m.stale; for (const k of m.out_of_range || []) delete S.live.values[k]; if (S.tab === 'live') renderTiles(); break;
-      case 'recording': await loadState(); render(); break;
+      case 'recording': if (m.on) S.lastPacketAt = null; await loadState(); render(); break;
       case 'session': S.sel = []; S.expr = ''; S.series = null; S.solve = null; S.checked = null; S.saved = null; S.yamlDirty = false; S.live = { source: null, values: {}, stale: false }; await reload(); break;
       case 'draft': S.yaml = m.yaml || ''; S.yamlDirty = false; await loadState(); render(); break;
       case 'checked':
@@ -759,10 +760,27 @@ function renderTiles() {
   const box = $('#tiles');
   if (!box) return;
   const groups = liveGroups();
+  const s = session();
+  // The state of things in large type: listening, receiving, or gone quiet.
+  const status = $('#live-status');
+  if (status) {
+    const quietFor = S.lastPacketAt ? Math.round((Date.now() - S.lastPacketAt) / 1000) : null;
+    let cls = 'listening', big, small = '';
+    if (!s || !s.recording) { cls = 'stopped'; big = 'Stopped'; small = 'Nothing is being read. Press “Start again” to listen.'; }
+    else if (quietFor === null) { big = 'Listening… nothing received yet'; small = 'Wake the device: pedal, press a button, put the strap on.'; }
+    else if (quietFor > 8) { cls = 'quiet'; big = `Nothing received for ${quietFor} s`; small = 'The device has gone quiet, or is out of range.'; }
+    else if (!groups.length) { big = 'Receiving data, but nothing reads it yet'; small = 'No table and no standard profile knows these packets. See them in Record, and map them in Map.'; }
+    else { cls = 'receiving'; const n = groups.reduce((a, g) => a + g.tiles.filter((t) => t.value !== undefined).length, 0); big = `Receiving · ${n} value${n === 1 ? '' : 's'} reported`; }
+    const text = big + '|' + small;
+    if (status.dataset.text !== text) {
+      status.dataset.text = text;
+      status.className = 'live-status ' + cls;
+      status.replaceChildren(...[h('div', { class: 'big' }, big), small ? h('div', { class: 'muted' }, small) : null].filter(Boolean));
+    }
+  }
   if (!groups.length) {
-    const s = session();
     box.dataset.sig = '';
-    box.replaceChildren(h('div', { class: 'empty' }, s && s.recording ? 'Waiting for the device… (wake it: pedal or press a button)' : 'Press Start to see the values.'));
+    box.replaceChildren();
     return;
   }
   // rebuild only when the set of values changes, so nothing jumps while you look or click
@@ -790,8 +808,10 @@ function renderTiles() {
     const show = tile.querySelector('.show');
     if (mode === 'dial') show.replaceChildren(dial(t.value, t.f));
     else {
-      const text = fmt(t.value, t.f) + (mode === 'text' && t.f.unit ? ' ' + t.f.unit : '');
-      if (!show.firstChild || show.firstChild.className !== 'value' + (mode === 'text' ? ' text' : '')) show.replaceChildren(h('div', { class: 'value' + (mode === 'text' ? ' text' : '') }, text));
+      const none = t.value === undefined;
+      const text = none ? 'nothing reported yet' : fmt(t.value, t.f) + (mode === 'text' && t.f.unit ? ' ' + t.f.unit : '');
+      const cls = 'value' + (none ? ' none' : mode === 'text' ? ' text' : '');
+      if (!show.firstChild || show.firstChild.className !== cls) show.replaceChildren(h('div', { class: cls }, text));
       else if (show.firstChild.textContent !== text) show.firstChild.textContent = text;
     }
     const v = verdictOf(t);
@@ -829,7 +849,7 @@ function viewLive() {
   const problem = h('input', { class: 'fill', placeholder: 'everything freezes for a few seconds now and then · …', onkeydown: (e) => { if (e.key === 'Enter') tell(); } });
   const tell = guard(async () => { if (!problem.value.trim()) return; await api('/api/note', { text: 'PROBLEM: ' + problem.value }); problem.value = ''; toast('Saved with the time.'); });
   const told = (S.capture ? S.capture.notes : []).filter((n) => n.text.startsWith('PROBLEM:')).slice(-5).reverse();
-  wrap.append(head, h('div', { id: 'tiles' }),
+  wrap.append(head, h('div', { id: 'live-status', class: 'live-status' }), h('div', { id: 'tiles' }),
     h('div', { class: 'panel', style: 'margin-top:16px' },
       h('h2', {}, 'Anything else?'),
       h('p', { class: 'hint' }, 'Something that is not about one value. Saved in the recording with the time.'),
@@ -1022,6 +1042,7 @@ The notes and confirmations are mine to give: they are what I read on the device
 
 // ───────────────────────── start ─────────────────────────
 
+setInterval(() => { if (S.tab === 'live') renderTiles(); }, 1000);
 document.querySelectorAll('#tabs button').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab)));
 $('#assistant-open').addEventListener('click', assistantDialog);
 reload().then(() => { if (session()) setTab(session().from_file ? 'map' : 'record'); connectEvents(); }).catch((e) => toast(e.message, true));
