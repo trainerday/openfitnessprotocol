@@ -136,3 +136,20 @@ be written as part of the fixed bytes.
   per device (a token, which would make it D).
 - Chrono and XCX: the maker is not clear from the code.
 - Popularity is rough throughout; QZ's issue tracker was not read.
+
+## Start-command bikes taken from QZ (three only)
+
+Out of respect for QZ's author, only three start-command bikes were chosen to be taken from QZ
+(2026-11-20, same clean-room rule). Two specs were written; the third was stopped:
+
+- Domyos bikes without FTMS: [`registry/tables/domyos-bike.spec.md`](../../registry/tables/domyos-bike.spec.md)
+- Yesoul, older protocol: [`registry/tables/yesoul-classic-bike.spec.md`](../../registry/tables/yesoul-classic-bike.spec.md)
+- ProForm / NordicTrack (iFit) Bluetooth bikes: **stopped, no spec written.** In every model's
+  start sequence QZ sends one frame (command byte `90`, a 40-byte payload split over three
+  writes) whose payload is about 32 opaque, random-looking bytes that differ from model to model.
+  It has the shape of a key or security check, not a plain start command, and nothing in QZ's
+  code shows otherwise. Under `SECURITY.md` and `AGENTS.md` (nothing that gets past a device
+  lock), it is left out. QZ's model is also chosen by the rider in a setting, not recognised from
+  the name, so a table could not pick the right sequence by itself.
+
+The other start-command bikes in the table above are left for owners to record themselves.

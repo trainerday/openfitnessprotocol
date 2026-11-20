@@ -1347,7 +1347,7 @@ function tellYourApps(device) {
   const text = `My ${device} works with Open Fitness Protocol: I checked its numbers in OFP Studio. Could your app read it through OFP? https://openfitnessprotocol.org`;
   return h('div', { class: 'panel tell' },
     h('h2', {}, '✓ Your device works with OFP'),
-    h('p', {}, 'Every app that uses Open Fitness Protocol can read it. If an app you use doesn\'t read your device yet, tell them. You can send this:'),
+    h('p', {}, 'Apps that use Open Fitness Protocol can read it (a device new to OFP reaches them with their next update of the library). If an app you use doesn\'t read your device, tell them. You can send this:'),
     h('pre', { class: 'tell-text' }, text),
     h('button', { class: 'small', onclick: async () => { try { await navigator.clipboard.writeText(text); toast('Copied'); } catch { toast('Select the text and copy it', true); } } }, 'Copy'));
 }
