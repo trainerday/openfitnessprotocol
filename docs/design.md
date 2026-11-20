@@ -189,8 +189,23 @@ not merge into the device the app already shows. Its part appears as a **second 
 - If a table does decode a value the standard service also carries, the rider chooses the source
   in the app, the way they choose between the ANT+ and the Bluetooth version of a sensor today.
 
-Still open: the OFP service's UUIDs and byte layout, and which standard service a source offers when
-several would fit. Until this exists, a host uses the JSON messages of the host interface below.
+#### The app says what it already reads
+
+*Planned 2026-11-20, not built.* When an app starts OFP it passes the list of Bluetooth services
+(or single characteristics) it reads by itself, for example Heart Rate, Cycling Power and FTMS.
+OFP then offers only what is **not** on that list:
+
+- a device's own service that a table decodes → "<device> Extras";
+- a standard service the app has no code for (say Running Speed and Cadence, or treadmill data) →
+  also offered through OFP, read by OFP's standard-profile readers, with no table needed;
+- everything on the list → left to the app, and OFP stays silent about it.
+
+So the same device can be all-direct in one app and partly OFP in another, and nobody maintains a
+list of "OFP devices": it follows from what the app said and what the device has. An app that
+passes an empty list uses OFP as its only way of reading sensors.
+
+Still open: the OFP service's UUIDs and byte layout, which standard service a source offers when
+several would fit, and what OFP assumes when an app passes no list at all. Until this exists, a host uses the JSON messages of the host interface below.
 
 ## Where OFP runs
 
