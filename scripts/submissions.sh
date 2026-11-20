@@ -36,7 +36,7 @@ object() { # object <key>: its body on stdout
 case "$1" in
   list)
     for k in $(keys | grep '\.json$' | sort -r); do
-      object "$k" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const m=JSON.parse(s);console.log([m.code,m.received.slice(0,16).replace("T"," "),m.device||"?",m.read_as||"",(m.comment||"").replace(/\s+/g," ").slice(0,80)].join("  |  "))})'
+      object "$k" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const m=JSON.parse(s);console.log([m.code,m.received.slice(0,16).replace("T"," "),[m.make,m.model].filter(Boolean).join(" ")||m.device||"?",m.read_as||"",(m.comment||"").replace(/\s+/g," ").slice(0,80)].join("  |  "))})'
     done
     ;;
   get)

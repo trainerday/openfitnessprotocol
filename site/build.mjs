@@ -93,8 +93,8 @@ function home(latest) {
 <section class="scope">
   <h2>OFP reads data. It does not control devices.</h2>
   <div class="cards">
-    <div class="card yes"><h3>Yes: reading</h3><p>A Concept2 rower's strokes and watts, a power meter, a heart rate strap, a bike that only broadcasts its numbers, a breathing or temperature sensor. A smart trainer's power and cadence too.</p></div>
-    <div class="card no"><h3>Not today: control</h3><p>Setting a smart trainer's resistance or ERG mode (a Wahoo KICKR is read, not steered), or changing a treadmill's speed. Your app keeps doing that the way it does now. Control may come later.</p></div>
+    <div class="card yes"><h3><span class="mark-yes" aria-hidden="true">✓</span> Yes: reading</h3><p>A Concept2 rower's strokes and watts, a power meter, a heart rate strap, a bike that only broadcasts its numbers, a breathing or temperature sensor. A smart trainer's power and cadence too.</p></div>
+    <div class="card no"><h3><span class="mark-no" aria-hidden="true">✕</span> Not today: control</h3><p>Setting a smart trainer's resistance or ERG mode (a Wahoo KICKR is read, not steered), or changing a treadmill's speed. Your app keeps doing that the way it does now. Control may come later.</p></div>
   </div>
 </section>
 
@@ -133,6 +133,12 @@ function notesList(notes) {
   return notes.length ? `<ul>${notes.map((n) => `<li>${inline(n)}</li>`).join('')}</ul>` : '';
 }
 
+/** From 0.2.0 the Studio opens on Connect, check your numbers, send. */
+function simpleStudio(version) {
+  const [a, b] = String(version).split('.').map(Number);
+  return a > 0 || b >= 2;
+}
+
 function download(latest, changelog) {
   if (!latest) {
     return page({ path: '/download', title: 'Download OFP Studio', description: 'OFP Studio is not released yet.',
@@ -159,8 +165,9 @@ function download(latest, changelog) {
   <ol class="steps">
     <li><b>Mac:</b> open the downloaded file and drag <b>OFP Studio</b> into Applications. <b>Windows:</b> run the installer.</li>
     <li>Start it. On a Mac, the first time, it asks to use Bluetooth: allow it. Bluetooth has to be on.</li>
-    <li>Wake your device (pedal, put the strap on). Find it in the list (or under <b>Don't see your device?</b>) and click <b>Connect</b>.</li>
-    <li>Check your numbers: for each, <b>Looks right</b> or <b>Looks wrong</b>. Then <b>Send to OFP</b>, with a comment if something is missing. You get a code; we get the recording.</li>
+    ${simpleStudio(latest.version) ? `<li>Wake your device (pedal, put the strap on). Find it in the list (or under <b>Don't see your device?</b>) and click <b>Connect</b>.</li>
+    <li>Check your numbers: for each, <b>Looks right</b> or <b>Looks wrong</b>. Then <b>Send to OFP</b>, with a comment if something is missing. You get a code; we get the recording.</li>` : `<li>Wake your device (pedal, put the strap on). Find it in the list (or under <b>Don't see your device?</b>) and click <b>Use</b>.</li>
+    <li>On <b>Live</b>, say for each value whether it is right. <b>Stop and save</b> gives you one file to send.</li>`}
   </ol>
 </section>
 

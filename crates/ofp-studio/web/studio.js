@@ -690,8 +690,9 @@ function newFieldDialog(similarShown) {
 
 // ───────────────────────── 4 Live ─────────────────────────
 
-function displayMode(key, kind) {
-  try { return localStorage.getItem('ofp-display-' + key) || (kind === 'instantaneous' ? 'number' : 'number'); } catch { return 'number'; }
+/** Every value is shown as a number (a dial and a text form were offered once; nobody needs the choice). */
+function displayMode() {
+  return 'number';
 }
 function setDisplayMode(key, mode) { try { localStorage.setItem('ofp-display-' + key, mode); } catch { /* private window */ } renderTiles(); }
 
@@ -838,15 +839,15 @@ function renderTiles() {
     box.replaceChildren(...groups.map((g) => h('div', { class: 'group' },
       h('div', { class: 'group-head' }, h('b', {}, g.title), h('span', { class: 'muted' }, ' · ' + g.hint)),
       h('div', { class: 'tiles' }, g.tiles.map((t) => h('div', { class: 'tile', 'data-id': t.id },
-        h('div', { class: 'name' }, h('span', {}, t.f.name, t.f.unit ? h('span', { class: 'unit' }, ' ' + t.f.unit) : null),
-          h('select', { class: 'small', onchange: (e) => setDisplayMode(t.f.key, e.target.value) },
-            [['number', 'Big number'], ['dial', 'Dial'], ['text', 'Text']].map(([v, l]) => h('option', { value: v, selected: displayMode(t.f.key) === v }, l)))),
+        h('div', { class: 'name' }, h('span', {}, t.f.name, t.f.unit ? h('span', { class: 'unit' }, ' ' + t.f.unit) : null)),
         h('div', { class: 'show' }),
         h('div', { class: 'desc muted' }, (fieldOf(t.key) && fieldOf(t.key).description) || ''),
         h('div', { class: 'verdict' }),
-        h('div', { class: 'row' },
+        h('div', { class: 'row answer' },
           h('button', { class: 'small yes', onclick: () => sayRight(currentTile(t.id)) }, S.advanced ? 'Yes, this is right' : 'Looks right'),
-          h('button', { class: 'small no', onclick: () => sayWrong(currentTile(t.id)) }, S.advanced ? 'No, this is wrong' : 'Looks wrong'))))))));
+          S.advanced
+            ? h('button', { class: 'small no', onclick: () => sayWrong(currentTile(t.id)) }, 'No, this is wrong')
+            : h('button', { class: 'linkish wrong', onclick: () => sayWrong(currentTile(t.id)) }, 'Looks wrong'))))))));
   }
   for (const g of groups) for (const t of g.tiles) {
     const tile = box.querySelector(`.tile[data-id="${t.id}"]`);
@@ -1103,8 +1104,13 @@ function showingLive() {
 /** Where "Send to OFP" goes. `?submit=<url>` on the page points it elsewhere (for testing). */
 const SUBMIT = new URLSearchParams(location.search).get('submit') || 'https://openfitnessprotocol.org/api/submit';
 
+/** In the simple Studio: the device list ('connect') or the device being read ('check'). Going to the list
+ *  does not disconnect: the device keeps recording until another one is connected. */
+let simpleView = 'check';
+
 const connect = guard(async (d) => {
   S.sent = null;
+  simpleView = 'check';
   if (!(session() && session().device_id === d.device_id)) {
     await api('/api/session', { device_id: d.device_id });
     await api('/api/record/start', {});
@@ -1114,24 +1120,33 @@ const connect = guard(async (d) => {
   await reload();
 });
 
-const chooseAnother = guard(async () => {
-  if (session() && session().recording) await api('/api/record/stop', {});
-  await api('/api/session', {}).catch(() => {});
+/** Back to the list, the device still connected and recording. */
+function chooseAnother() {
   S.sent = null;
-  await reload();
-});
+  simpleView = 'connect';
+  render();
+}
+
+/** Back to the device being read. */
+function backToDevice() {
+  simpleView = 'check';
+  render();
+}
 
 function viewSimple() {
   const s = session();
   if (S.sent) return viewSent();
-  if (!s || s.from_file) return viewConnect();
+  if (!s || s.from_file || simpleView === 'connect') return viewConnect(s && !s.from_file ? s : null);
   return viewCheck(s);
 }
 
-/** Step 1: the devices nearby, as big cards with one Connect button each. */
-function viewConnect() {
+/** Step 1: the devices nearby, as big cards with one Connect button each. `current`: a device still connected. */
+function viewConnect(current) {
   const wrap = h('div', { class: 'simple-page' },
-    h('div', { class: 'steps' }, h('span', { class: 'on' }, '1 Connect'), h('span', {}, '2 Check your numbers'), h('span', {}, '3 Send')),
+    h('div', { class: 'steps' }, h('span', { class: 'on' }, '1 Connect'),
+      current ? h('button', { class: 'done', title: 'Back to ' + current.name, onclick: backToDevice }, '2 Check your numbers') : h('span', {}, '2 Check your numbers'),
+      h('span', {}, '3 Send')),
+    current ? h('p', { class: 'connected-note' }, 'Connected to ', h('b', {}, current.name), '. ', h('button', { class: 'linkish', onclick: backToDevice }, 'Back to its numbers')) : null,
     h('h1', {}, 'Connect your device'),
     h('p', { class: 'lead' }, 'Wake it up first: pedal, press a button, or put the strap on. It appears here within a few seconds.'),
     h('div', { id: 'cards-readable', class: 'cards' }),
@@ -1157,7 +1172,8 @@ function renderDeviceCards() {
     counts[group]++;
     let card = cardEls.get(d.device_id);
     if (!card) {
-      card = h('div', { class: 'device-card' }, h('div', { class: 'title' }), h('div', { class: 'what' }), h('button', { class: 'connect', onclick: () => connect(d) }, 'Connect'));
+      card = h('div', { class: 'device-card' }, h('div', { class: 'title' }), h('div', { class: 'what' }),
+        h('button', { class: 'connect', onclick: () => (session() && session().device_id === d.device_id ? backToDevice() : connect(d)) }, 'Connect'));
       cardEls.set(d.device_id, card);
     }
     const box = boxes[group];
@@ -1168,10 +1184,14 @@ function renderDeviceCards() {
     const set = (el, text) => { if (el.textContent !== text) el.textContent = text; };
     set(card.children[0], d.name || 'A device with no name');
     // what reads it, without the device's own name repeated after it
-    const what = by.map((b) => b.split(' · ')[0]).filter((b, i, all) => all.indexOf(b) === i);
-    set(card.children[1], quiet ? 'Not heard for a while: wake it up' : what.length ? 'OFP reads it: ' + what.join(', ') : 'OFP can\'t read it yet');
-    card.classList.toggle('quiet', quiet);
-    card.children[2].disabled = quiet;
+    const what = by.map((b) => b.split(' · ')[0].replace('Fitness machine (FTMS)', 'FTMS')).filter((b, i, all) => all.indexOf(b) === i);
+    set(card.children[1], quiet ? 'Not heard for a while: wake it up, then Connect' : what.length ? 'OFP reads it: ' + what.join(', ') : 'OFP can\'t read it yet');
+    // a device that is connected stops advertising, so "quiet" is normal for it: never greyed out or locked
+    const isCur = !!(session() && session().device_id === d.device_id);
+    card.classList.toggle('quiet', quiet && !isCur);
+    card.classList.toggle('current', isCur);
+    if (isCur) set(card.children[1], 'Connected now');
+    set(card.children[2], isCur ? 'Show its numbers' : 'Connect');
   }
   for (const [id, card] of cardEls) if (!seen.has(id)) { card.remove(); cardEls.delete(id); }
   $('#cards-maybe-wrap').hidden = !counts.maybe;
@@ -1185,8 +1205,69 @@ function renderDeviceCards() {
   if (empty.textContent !== text) empty.textContent = text;
 }
 
+/** What the device says about itself when connected (Device Information: maker 2a29, model 2a24). */
+function deviceInfo() {
+  const text = (chr) => {
+    const r = ((S.capture && S.capture.io) || []).find((x) => x[1] === 'read' && String(x[2]).toLowerCase().replace(/^0000|-0000-1000-8000-00805f9b34fb$/g, '') === chr);
+    if (!r) return '';
+    const hex = String(r[3]).replace(/\s/g, '');
+    let out = '';
+    for (let i = 0; i + 1 < hex.length; i += 2) out += String.fromCharCode(parseInt(hex.slice(i, i + 2), 16));
+    return out.replace(/\0+$/, '').trim();
+  };
+  return { make: text('2a29'), model: text('2a24') };
+}
+
+/** What a person calls a number → the field key OFP uses, when it is clearly one we know. */
+const SAID_FIELD = [
+  [/^(w|watts?|power)$/, 'power'], [/^(rpm|cadence|revs?)$/, 'cadence'], [/^(km\/?h|kph|speed)$/, 'speed'],
+  [/^(bpm|heart ?rate|hr|pulse)$/, 'heart_rate'], [/^(level|resistance|gear)$/, 'resistance'], [/^(kcal|cal|calories|energy)$/, 'energy'],
+  [/^(spm|strokes? ?(rate|per minute)?)$/, 'stroke_rate'], [/^(incline|grade|%)$/, 'incline'],
+];
+function fieldFromWords(words) {
+  const w = words.trim().toLowerCase();
+  for (const [re, key] of SAID_FIELD) if (re.test(w)) return key;
+  return w.replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'value';
+}
+
+/** For a device OFP cannot read (or reads wrongly): hold steady, then say what the display shows. */
+function holdSteady(s, open) {
+  const rows = [0, 1, 2].map(() => ({ n: h('input', { type: 'text', inputmode: 'decimal', placeholder: '150' }), what: h('input', { placeholder: 'watts, rpm, level, km/h, …' }) }));
+  const start = h('button', { class: 'small', onclick: () => {
+    let left = 20;
+    start.disabled = true;
+    const tick = () => {
+      if (left > 0) { start.textContent = `Hold it… ${left} s`; left--; setTimeout(tick, 1000); return; }
+      start.textContent = 'Now: what does the display show?';
+      rows[0].n.focus();
+      setTimeout(() => { start.disabled = false; start.textContent = 'Start 20 seconds again'; }, 4000);
+    };
+    tick();
+  } }, 'Start 20 seconds');
+  const save = guard(async () => {
+    const said = rows.filter((r) => r.n.value.trim() !== '' && !Number.isNaN(Number(r.n.value.replace(',', '.'))));
+    if (!said.length) throw new Error('Type at least one number from the display.');
+    const pairs = said.map((r) => `${fieldFromWords(r.what.value)}=${Number(r.n.value.replace(',', '.'))}`);
+    const words = said.map((r) => `${r.n.value.trim()} ${r.what.value.trim() || '(no meaning given)'}`).join('; ');
+    // the values go in a form the Studio's "find it for me" uses, the person's own words beside them
+    await api('/api/note', { text: `DISPLAY ${pairs.join(' ')} (said: ${words})` });
+    for (const r of rows) { r.n.value = ''; r.what.value = ''; }
+    toast('Saved with the time. Hold another value and do it again if you can.');
+  });
+  return h('details', { class: 'panel hold', open: open || undefined },
+    h('summary', {}, open ? 'Help us read it: hold a steady value' : 'A number missing or wrong? Tell us what your display shows'),
+    h('p', {}, 'Ride (or row, or run) at a steady effort for about 20 seconds, so the numbers on your device\'s own display stop moving. Then type what it shows, and what each number means.'),
+    h('div', { class: 'row' }, start),
+    h('div', { class: 'said' }, rows.map((r) => h('div', { class: 'said-row' }, r.n, r.what))),
+    h('div', { class: 'row' }, h('button', { class: 'small primary', onclick: save, disabled: !s.recording }, 'Save these numbers')));
+}
+
 /** Steps 2 and 3: the numbers, right or wrong, a comment, and Send. */
 function viewCheck(s) {
+  const info = deviceInfo();
+  const readable = !!S.live.source;
+  const make = h('input', { id: 'send-make', value: info.make, placeholder: 'e.g. Inspire, Yesoul, Concept2' });
+  const model = h('input', { id: 'send-model', value: info.model, placeholder: 'e.g. IC2, G1M Plus, BikeErg' });
   const comment = h('textarea', { id: 'send-comment', rows: 3, placeholder: 'A number that is missing, one that is always 0, the display shows something else, …' });
   const email = h('input', { id: 'send-email', type: 'email', placeholder: 'you@example.com (optional)' });
   const send = guard(async () => {
@@ -1196,13 +1277,14 @@ function viewCheck(s) {
     try {
       // the comment goes into the recording too, with the time, while it is still recording
       if (comment.value.trim()) await api('/api/note', { text: 'COMMENT: ' + comment.value.trim() }).catch(() => {});
+      if (make.value.trim() || model.value.trim()) await api('/api/note', { text: `DEVICE: make=${make.value.trim()} model=${model.value.trim()}` }).catch(() => {});
       if (session() && session().recording) await api('/api/record/stop', {});
       const recording = await (await fetch('/api/capture/file', { cache: 'no-store' })).text();
       const src = S.live.source;
       const r = await fetch(SUBMIT, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ recording, comment: comment.value.trim(), email: email.value.trim(), version: S.state && S.state.version, device: s.name, read_as: src ? src.name : 'nothing reads it yet' }),
+        body: JSON.stringify({ recording, comment: comment.value.trim(), email: email.value.trim(), make: make.value.trim(), model: model.value.trim(), version: S.state && S.state.version, device: s.name, read_as: src ? src.name : 'nothing reads it yet' }),
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok || !j.code) throw new Error(j.error || 'Sending did not work. Check the internet connection and try again.');
@@ -1215,13 +1297,17 @@ function viewCheck(s) {
     }
   });
   return h('div', { class: 'simple-page' },
-    h('div', { class: 'steps' }, h('span', { class: 'done' }, '1 Connect'), h('span', { class: 'on' }, '2 Check your numbers'), h('span', {}, '3 Send')),
+    h('div', { class: 'steps' }, h('button', { class: 'done', title: 'Choose a different device', onclick: chooseAnother }, '1 Connect'), h('span', { class: 'on' }, '2 Check your numbers'), h('span', {}, '3 Send')),
     h('div', { class: 'row', style: 'justify-content:space-between; align-items:baseline' },
       h('h1', {}, s.name), h('button', { class: 'linkish', onclick: chooseAnother }, 'Choose another device')),
     h('p', { class: 'lead' }, 'Use your device normally and compare with its own display. For each number: does it look right? They move, so close is right.'),
     h('div', { id: 'live-status', class: 'live-status' }), h('div', { id: 'tiles' }),
+    holdSteady(s, !readable),
     h('div', { class: 'panel send' },
       h('h2', {}, '3 Send it to us'),
+      h('label', {}, readable ? 'Which device is it?' : 'Which device is it? OFP doesn\'t know it yet, so this helps us most'),
+      h('div', { class: 'two' }, h('div', {}, h('span', { class: 'muted' }, 'Make'), make), h('div', {}, h('span', { class: 'muted' }, 'Model'), model)),
+      info.make || info.model ? h('p', { class: 'muted small-print' }, 'Filled in from what the device says about itself: correct it if it is wrong.') : null,
       h('label', {}, 'Anything missing or wrong? Tell us'), comment,
       h('label', {}, 'Your email, only if you want us to reply'), email,
       h('p', { class: 'muted small-print' }, 'We receive what your device sent while it was connected, your answers above, your comment and your email if you give one. A recording can include your heart rate. It is kept privately for 90 days, read only by the people who maintain OFP, and used only to add or fix your device.'),
@@ -1236,7 +1322,7 @@ function viewSent() {
     h('p', { class: 'lead' }, 'Your recording is with us. Its code is'),
     h('div', { class: 'code' }, S.sent.code),
     h('p', {}, 'Keep the code: it is how we find your recording. If you want to follow along, ', h('a', { href: issue, target: '_blank', rel: 'noopener' }, 'open an issue on GitHub'), ' with the code in it. Someone (or an AI assistant) can now work out your device from what it sent, and you get it in a later version of OFP Studio.'),
-    h('div', { class: 'row' }, h('button', { class: 'connect', onclick: () => { S.sent = null; chooseAnother(); } }, 'Connect another device')));
+    h('div', { class: 'row' }, h('button', { class: 'connect', onclick: chooseAnother }, 'Connect another device')));
 }
 
 // ───────────────────────── version, and a newer release ─────────────────────────

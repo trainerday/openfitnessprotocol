@@ -80,3 +80,6 @@ footer.bottom p { margin: 4px 0; }
 .scope { padding-top: 6px; }
 .card.yes { border-left: 4px solid #12805c; }
 .card.no { border-left: 4px solid #c0362c; }
+.mark-yes, .mark-no { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; color: #fff; font-size: 16px; font-weight: 800; margin-right: 6px; vertical-align: -3px; }
+.mark-yes { background: #12805c; }
+.mark-no { background: #c0362c; }

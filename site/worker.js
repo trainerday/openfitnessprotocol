@@ -126,6 +126,8 @@ async function submit(request, env) {
     received: now.toISOString(),
     comment: short(body.comment, 4000),
     email: short(body.email, 200),
+    make: short(body.make, 100),
+    model: short(body.model, 100),
     studio_version: short(body.version, 40),
     device: short(body.device, 200),
     read_as: short(body.read_as, 200),
