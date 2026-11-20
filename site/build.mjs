@@ -169,7 +169,7 @@ function home(latest) {
         <li>Domyos bikes without FTMS, older Yesoul, iConsole+ consoles, Nautilus</li>
         <li>Inspire IC, XCX, Chrono bikes</li>
       </ul>
-      <p class="small">Own one? Connect it in OFP Studio, check the numbers, and send it. That is what verifies it.</p>
+      <p class="cta-line"><b>Have one of these? Please verify it.</b> Or add your own device. Connect it in <a href="/download">OFP Studio</a>, check the numbers, and send it.</p>
     </div>
   </div>
   <p class="small"><b>Smart trainers</b> (Wahoo KICKR, Tacx, Elite, Saris, Wattbike and others) are read too, power and cadence, but <b>read only</b>: OFP does not set their resistance or ERG mode. Your app keeps controlling them the way it does now, so there is usually little reason to read them through OFP.</p>

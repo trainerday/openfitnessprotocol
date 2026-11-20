@@ -307,9 +307,9 @@ findings; no owner has checked one in OFP Studio yet):
 | Domyos bikes without FTMS, older Yesoul bikes, iConsole+ consoles, Nautilus bikes | power or speed, cadence, resistance (each as it sends) |
 | Inspire IC, XCX and Chrono bikes | cadence, resistance, and power or speed where sent |
 
-OFP reads; it never controls a device. Own one of the devices that are not verified yet? Install
+**Have one of these? Please verify it. Or add your own device.** Install
 [OFP Studio](https://openfitnessprotocol.org/download), connect it, say whether each number looks right,
-and send it: that is what verifies it.
+and send it. OFP reads; it never controls a device.
 
 ## Contributing
 

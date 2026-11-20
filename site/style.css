@@ -100,3 +100,4 @@ footer.bottom p { margin: 4px 0; }
 .devices li { margin: 4px 0; color: var(--text); font-size: 15px; }
 .mark-maybe { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; color: #fff; font-size: 16px; font-weight: 800; margin-right: 6px; vertical-align: -3px; background: #a3acb9; }
 .card.maybe { border-left: 4px solid #a3acb9; }
+.cta-line { margin: 10px 0 0; font-size: 15px; color: var(--text); border-top: 1px solid var(--line); padding-top: 10px; }
