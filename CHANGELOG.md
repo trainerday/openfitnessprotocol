@@ -7,7 +7,7 @@ How to write it: one line per thing a user would notice, new things first, at mo
 fixes are folded into a last "Bug fixes and improvements". Notes for the next release go under `## Next`;
 `scripts/release.sh` turns that heading into the version and date.
 
-## Next
+## 0.2.1 (2026-11-20)
 
 - Heart rate straps: RR intervals (the time between beats, for HRV), one value per beat.
 
