@@ -195,7 +195,8 @@ Three things to know before you count the lines:
   numbers in their Bluetooth broadcast. Devices you connect to that simply notify come next.
   Devices that need a handshake, encryption or real code are not tables.
 
-For a JavaScript app the four hooks are a small package, [`packages/ofp-js`](packages/ofp-js):
+For a JavaScript app the four hooks are a small package, [`packages/ofp-js`](packages/ofp-js), and
+there are two worked examples of a real integration in [`docs/integrating.md`](docs/integrating.md):
 
 ```js
 const ofp = new Ofp({ engine, bundle, iRead: ['180d', '1818', '1826'], on: { device, values, inUse, lost } })
@@ -337,6 +338,7 @@ language in the [design document](docs/design.md#the-table-language).
 - [Design document](docs/design.md): the full design, what comes later, and the open questions.
 - [OFP Studio](docs/studio.md): the page for adding and testing a device, and its API.
 - [AGENTS.md](AGENTS.md): the rules for adding to the registry, for people and AI assistants.
+- [Adding OFP to an app](docs/integrating.md): the four hooks, two worked examples, and a prompt for an assistant.
 - [Capture format](docs/capture-format.md): the file a recording is saved in.
 - [`crates/ofp-ffi`](crates/ofp-ffi/src/lib.rs): the five functions an app calls.
 

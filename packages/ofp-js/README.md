@@ -38,6 +38,9 @@ disconnectButton.onclick = () => ofp.release(id)
 - **The scan must keep running** while a broadcast-only device is in use: its advertisements are
   its data. That part is your app's.
 - A failure inside OFP turns it off (`on.error`); it never throws into your scanner.
+- Helpers the two reference integrations use: `ofp.scanNeed()`, `on.radio` (how well the radio hears a
+  device, once a minute), `reofferMs`, `ofp.hasHeartRate(id)`, `selfTest(engine, bundle)`, and the
+  adapters in `adapters/` for noble and react-native-ble-manager.
 
 ## The two forms of the core
 

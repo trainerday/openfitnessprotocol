@@ -2,7 +2,9 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { Ofp, wasmEngine, moduleEngine, basic, toHex, base64ToHex } from '../index.js'
+import { Ofp, wasmEngine, moduleEngine, basic, toHex, base64ToHex, selfTest } from '../index.js'
+import * as rn from '../adapters/react-native-ble-manager.js'
+import * as noble from '../adapters/noble.js'
 
 const dist = (f) => fileURLToPath(new URL('../../../dist/' + f, import.meta.url))
 const bundle = readFileSync(dist('registry.bundle.json'), 'utf8')
@@ -120,6 +122,59 @@ for (const [name, engine] of Object.entries(engines)) {
     assert.throws(() => new Ofp({ engine: engine(), bundle: '{"version":99,"fields":[],"tables":[]}', tickMs: 0 }), /bundle/i)
   })
 }
+
+for (const [name, engine] of Object.entries(engines)) {
+  test(`${name}: what the scan must do, radio statistics, heart rate seen, re-offering, self-test`, () => {
+    const seen = { devices: [], radio: [] }
+    let now = 5_000_000
+    const ofp = new Ofp({ engine: engine(), bundle, tickMs: 0, now: () => now, reofferMs: 10_000, on: { device: (d) => seen.devices.push(d.id), radio: (r) => seen.radio.push(r) } })
+    const hear = (o) => ofp.advertisement({ deviceId: 'u', name: 'M3', rssi: -61, manufacturerData: keiser(o) })
+    assert.deepEqual(ofp.companyIds, [0x0102, 0x0645])
+    assert.equal(ofp.scanNeed(), null)
+    hear()
+    // heard, not in use: offered again every 10 s while it keeps being heard
+    for (let i = 0; i < 12; i++) { now += 1000; hear() }
+    assert.deepEqual(seen.devices, [BIKE, BIKE])
+    assert.equal(ofp.rssi(BIKE), -61)
+    assert.equal(ofp.hasHeartRate(BIKE), false)
+    ofp.use(BIKE)
+    assert.equal(ofp.scanNeed(), 'in_use')
+    // a minute in use, a packet every 2 s with one 9 s gap: the app is told how well the radio hears it
+    for (let t = 0; t < 62_000; t += 2000) { now += t === 20_000 ? 9000 : 2000; hear({ hr: 140 }); ofp.tick() }
+    assert.equal(seen.radio.length, 1)
+    assert.equal(seen.radio[0].id, BIKE)
+    assert.ok(seen.radio[0].packets >= 25 && seen.radio[0].longestGapMs === 9000, JSON.stringify(seen.radio[0]))
+    assert.equal(ofp.hasHeartRate(BIKE), true)
+    assert.equal(seen.devices.length, 2, 'a device in use is not offered again')
+    // lost but remembered: a slow scan waits for it; released: nothing
+    now += 80_000; ofp.tick(); ofp.tick()
+    assert.equal(ofp.scanNeed(), 'waiting')
+    ofp.release(BIKE)
+    assert.equal(ofp.scanNeed(), null)
+    ofp.destroy()
+    assert.deepEqual({ ...selfTest(engine(), bundle, 20), msPerPacket: 0 }, { ok: true, power: 187, cadence: 84, msPerPacket: 0 })
+  })
+}
+
+test('adapter: react-native-ble-manager', () => {
+  const peripheral = { id: 'AA:BB', name: 'M3', rssi: -60, advertising: { localName: 'M3', serviceUUIDs: [], manufacturerData: { '0102': { bytes: [...keiser({ power: 222 })].slice(2) }, '004c': { bytes: [1, 2] } } } }
+  const adverts = rn.advertisementsFrom(peripheral, [0x0102, 0x0645])
+  assert.equal(adverts.length, 1)
+  assert.deepEqual(adverts[0].manufacturerData, [...keiser({ power: 222 })])
+  assert.deepEqual(rn.advertisementsFrom({ id: 'x', advertising: {} }, [0x0102]), [])
+  assert.equal(rn.onlyOfpCanRead(peripheral, ['1826', '180D']), true)
+  assert.equal(rn.onlyOfpCanRead({ advertising: { serviceUUIDs: ['180d'] } }, ['1826', '180D']), false)
+  const ofp = { companyIds: [0x0102, 0x0645] }
+  assert.deepEqual(rn.scanOptionsFor(ofp, 'in_use', 2), { manufacturerData: { manufacturerId: 0x0102 }, scanMode: 2 })
+  assert.deepEqual(rn.scanOptionsFor(ofp, 'waiting', 2), { manufacturerData: { manufacturerId: 0x0102 } })
+  assert.deepEqual(rn.scanOptionsFor({ companyIds: [] }, null, 2), {})
+})
+
+test('adapter: noble', () => {
+  const data = Buffer.from(keiser())
+  assert.deepEqual(noble.advertisementFrom({ id: 'p1', rssi: -55, advertisement: { localName: 'M3', manufacturerData: data } }), { deviceId: 'p1', name: 'M3', rssi: -55, manufacturerData: data })
+  assert.equal(noble.advertisementFrom({ id: 'p2', advertisement: { localName: 'HRM' } }), null)
+})
 
 test('an error inside the core turns OFP off and tells the app, without throwing into its scanner', () => {
   const calls = { n: 0 }

@@ -18,6 +18,11 @@ if command -v wasm2js >/dev/null; then
 else
   echo "wasm2js not found (binaryen, version 133 or newer): dist/ofp_core.asm.js not rebuilt" >&2
 fi
+# the package, flattened: ofp.js beside adapters/
 cp packages/ofp-js/index.js dist/ofp.js
 cp packages/ofp-js/index.d.ts dist/ofp.d.ts
+mkdir -p dist/adapters
+cp packages/ofp-js/adapters/*.js dist/adapters/
+# in dist the package's index is named ofp
+for f in packages/ofp-js/adapters/*.d.ts; do sed "s|'../index'|'../ofp'|" "$f" > "dist/adapters/$(basename "$f")"; done
 ls -l dist

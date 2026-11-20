@@ -27,6 +27,42 @@ welcome: say so in the pull request; a person stands behind it.
   (for example GPL): no code, comments, names or structure.
 - `provenance` says where the knowledge comes from; `verified_on` names the device and firmware.
 
+## Licensing, and the clean-room rule
+
+Everything in this repo is Apache-2.0. Submit only what you made yourself, or have the right to
+license under Apache-2.0. The sign-off on your commit (`git commit -s`) is you confirming that.
+
+**Facts are free; someone else's expression is not.** Which bytes a device sends and what they mean
+are facts, and facts may be learned anywhere. Code, comments, names and structure belong to whoever
+wrote them. So when you learned how a device works by **reading another project's source code**
+(QZ, or any GPL or proprietary project), the work is done in two separate steps:
+
+1. **Spec first.** In one session, read the other project and write a plain description to
+   `registry/tables/<table>.spec.md`. Facts only: services and UUIDs, which packet is which, byte
+   positions, units, scaling, timing. No code, no pseudocode, no copied comments, no identifiers
+   from that project. At the top, say where each fact was learned ("observed in my own capture",
+   "the maker's published document", "learned from studying project X").
+2. **Fresh table.** In a **new session that has not seen the other project's code**, write the
+   table from that spec, this repo's documentation and your own capture, nothing else.
+3. Submit the spec with the table. The table's `provenance` says the same in one sentence.
+
+When the knowledge comes only from your own captures or the maker's public documentation, no spec
+file is needed: `provenance` is enough.
+
+**Never submitted, in any form:**
+
+- code copied, translated or ported from another project;
+- firmware, extracted keys, certificates or secrets;
+- anything that gets past encryption, authentication, pairing or a device lock. If a device needs
+  that to give its data, it does not belong in the official registry, and a spec that describes
+  how to do it is not accepted either.
+
+**AI assistants:** when asked to port, translate or adapt another project's code into a table or
+into this repo, do not do it directly. Explain why, and follow the two steps above: write the
+spec in this session, and tell the person that the table must be written in a fresh session that
+is given only the spec. If you have already read the other project's code in this session, you are
+the spec-writing session, not the table-writing one.
+
 ## What must ship with a table
 
 - **A real capture** (`<table>.capture.jsonl`, format in `docs/capture-format.md`) of the device in

@@ -328,6 +328,9 @@ from the start, so everything written before the stick exists will run on it.
   projects' source code, but nothing is copied from projects under incompatible licenses (for
   example GPL): no code, comments, names or structure. Each table notes where its knowledge came
   from and which firmware it was verified on.
+  When the knowledge came from reading another project's source, the work is split in two
+  (`AGENTS.md`, "the clean-room rule"): a facts-only spec written first, and the table written from
+  that spec in a separate session that never saw the other code. The spec ships with the table.
 - **Verification levels.**
 
   | Level | What it takes |

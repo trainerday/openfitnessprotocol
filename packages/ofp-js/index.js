@@ -125,6 +125,42 @@ export function basic(fields) {
   };
 }
 
+/** Bluetooth company ids the registry's tables match on: what a filtered scan has to let through. */
+export function companyIdsOf(bundleJson) {
+  try {
+    const ids = [];
+    for (const table of JSON.parse(bundleJson).tables || []) {
+      for (const rule of table.match || []) {
+        if (typeof rule.manufacturer_id === 'number' && !ids.includes(rule.manufacturer_id)) ids.push(rule.manufacturer_id);
+      }
+    }
+    return ids;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Does the core run here? Decodes a known Keiser M3i packet (187 W, 84 rpm) and times a few hundred
+ * more. Worth one log line at start: on a phone the core is a large generated file, and a device in
+ * range is the only other thing that would start it.
+ */
+export function selfTest(engine, bundle, rounds = 300) {
+  try {
+    let last;
+    const ofp = new Ofp({ engine, bundle, tickMs: 0, on: { values: (v) => { last = v; } } });
+    const packet = [0x02, 0x01, 0x06, 0x30, 0x00, 0x07, 0x48, 0x03, 0x8c, 0x05, 0xbb, 0x00, 0x2a, 0x00, 0x0c, 0x22, 0x33, 0x80, 0x0e];
+    const started = Date.now();
+    for (let i = 0; i < rounds; i++) ofp.advertisement({ deviceId: 'self-test', name: 'M3', manufacturerData: packet });
+    const msPerPacket = (Date.now() - started) / rounds;
+    ofp.destroy();
+    const ok = !!last && last.basic.power === 187 && last.basic.cadence === 84;
+    return { ok, power: last && last.basic.power, cadence: last && last.basic.cadence, msPerPacket };
+  } catch (error) {
+    return { ok: false, error: String(error) };
+  }
+}
+
 export class Ofp {
   /**
    * @param {object} o
@@ -138,6 +174,8 @@ export class Ofp {
    * @param {number} [o.repeatMs]  repeat a source's standing values this often while it is in use
    *   (default 1 s, for apps that treat "no event" as "no data"); 0 = never
    * @param {number} [o.lostAfterMs]  give up a silent source after this long (default 60 s)
+   * @param {number} [o.reofferMs]  while a device that is not in use keeps being heard, announce it
+   *   again (on.device) this often, for device lists that drop what they have not seen lately; 0 = never
    * @param {number} [o.tickMs]  the timer's period (default 1 s); 0 = the app calls tick() itself
    * @param {() => number} [o.now]
    */
@@ -147,6 +185,10 @@ export class Ofp {
     this.failed = false;
     this.described = new Map();   // source id → its description
     this.inUse = new Set();
+    this.remembered = new Set(o.remembered || []);
+    this.heard = new Map();       // source id → how well the radio hears it
+    this.reofferMs = o.reofferMs || 0;
+    this.companyIds = companyIdsOf(o.bundle);
     this.core = o.engine.create(o.bundle);
     this.core.call({
       op: 'configure',
@@ -183,16 +225,41 @@ export class Ofp {
           this.on.device && this.on.device(d);
           break;
         }
-        case 'values':
+        case 'values': {
+          const now = this.now();
+          let h = this.heard.get(m.source_id);
+          if (!h) { h = { packets: 0, minutePackets: 0, lastAt: now, longestGapMs: 0, minuteStart: now, offeredAt: now, rssi: undefined, heartRateSeen: false }; this.heard.set(m.source_id, h); }
+          if (!m.stale && !m.repeat) {
+            if (h.packets > 0) h.longestGapMs = Math.max(h.longestGapMs, now - h.lastAt);
+            h.packets++; h.minutePackets++; h.lastAt = now;
+            if (typeof m.rssi === 'number') h.rssi = m.rssi;
+            if ((m.fields.heart_rate || 0) > 0) h.heartRateSeen = true;
+            // still being heard and nobody is using it: keep it in the app's device list
+            if (this.reofferMs > 0 && !this.inUse.has(m.source_id) && now - h.offeredAt >= this.reofferMs) {
+              h.offeredAt = now;
+              const d = this.described.get(m.source_id);
+              if (d && this.on.device) this.on.device(d);
+            }
+          }
+          // once a minute for a device in use: how well the radio hears it
+          if (this.inUse.has(m.source_id) && now - h.minuteStart >= 60000) {
+            if (this.on.radio) this.on.radio({ id: m.source_id, packets: h.minutePackets, longestGapMs: h.longestGapMs, rssi: h.rssi });
+            h.minuteStart = now; h.minutePackets = 0; h.longestGapMs = 0;
+          }
           this.on.values && this.on.values({ id: m.source_id, t: m.t, fields: m.fields, basic: basic(m.fields), silent: !!m.stale, repeat: !!m.repeat, rssi: m.rssi, outOfRange: m.out_of_range || [] });
           break;
+        }
         case 'source_stale':
           this.on.silent && this.on.silent(m.source_id);
           break;
-        case 'source_in_use':
+        case 'source_in_use': {
           this.inUse.add(m.source_id);
+          this.remembered.add(m.source_id);
+          const h = this.heard.get(m.source_id);
+          if (h) { h.minuteStart = this.now(); h.minutePackets = 0; h.longestGapMs = 0; }
           this.on.inUse && this.on.inUse(m.source_id, !!m.auto, this.described.get(m.source_id));
           break;
+        }
         case 'source_lost':
           this.inUse.delete(m.source_id);
           this.on.lost && this.on.lost(m.source_id);
@@ -233,6 +300,7 @@ export class Ofp {
   /** Hook 4: the rider let it go. The app also drops it from what it passes as `remembered`. */
   release(id) {
     this.inUse.delete(id);
+    this.remembered.delete(id);
     this._guard(() => this.core.call({ op: 'release_source', source_id: id }));
   }
 
@@ -254,6 +322,31 @@ export class Ofp {
     } catch {
       return [];
     }
+  }
+
+  /**
+   * What the app's scan has to do for OFP right now. A broadcast-only device's data IS the scan:
+   *  - 'in_use'   one is giving the app its numbers: scan continuously, and do not stop
+   *  - 'waiting'  a remembered one has not been heard yet: a slow scan is enough to notice it
+   *  - null       nothing
+   */
+  scanNeed() {
+    if (this.failed || !this.core) return null;
+    if (this.inUse.size > 0) return 'in_use';
+    return this.remembered.size > 0 ? 'waiting' : null;
+  }
+
+  /** True once the device sent a heart rate above zero. A bike with no strap paired to it sends 0:
+   *  offer it as a heart-rate source only when this is true, or it takes the place of a real strap. */
+  hasHeartRate(id) {
+    const h = this.heard.get(id);
+    return !!h && h.heartRateSeen;
+  }
+
+  /** Last signal strength heard for a device, if any. */
+  rssi(id) {
+    const h = this.heard.get(id);
+    return h ? h.rssi : undefined;
   }
 
   /** What `source_appeared` said about a device, if it was heard. */

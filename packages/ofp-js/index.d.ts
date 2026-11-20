@@ -64,11 +64,15 @@ export interface OfpOptions {
     /** A device in use stayed silent for `lostAfterMs`. It is used again by itself if remembered. */
     lost?: (id: string) => void
     silent?: (id: string) => void
+    /** Once a minute for a device in use: how well the radio hears it. */
+    radio?: (stats: { id: string; packets: number; longestGapMs: number; rssi?: number }) => void
     error?: (error: unknown) => void
   }
   minStaleMs?: number
   repeatMs?: number
   lostAfterMs?: number
+  /** Announce a device that keeps being heard but is not in use again this often (0 = never). */
+  reofferMs?: number
   tickMs?: number
   now?: () => number
 }
@@ -84,6 +88,8 @@ export interface OfpAdvertisement {
 export class Ofp {
   constructor(options: OfpOptions)
   readonly failed: boolean
+  /** Bluetooth company ids the registry's tables match on. */
+  readonly companyIds: number[]
   advertisement(a: OfpAdvertisement): void
   use(id: string): boolean
   release(id: string): void
@@ -92,6 +98,10 @@ export class Ofp {
   used(): string[]
   devices(heardWithinMs?: number): OfpDevice[]
   describe(id: string): OfpDevice | undefined
+  /** 'in_use': scan continuously and do not stop; 'waiting': a slow scan is enough; null: nothing. */
+  scanNeed(): 'in_use' | 'waiting' | null
+  hasHeartRate(id: string): boolean
+  rssi(id: string): number | undefined
   tick(): void
   destroy(): void
 }
@@ -99,6 +109,8 @@ export class Ofp {
 export function wasmEngine(wasmBytes: Uint8Array): OfpEngine
 /** `exports`: a WebAssembly instance's exports, or the module `wasm2js` makes from the same file. */
 export function moduleEngine(exports: any): OfpEngine
+export function companyIdsOf(bundleJson: string): number[]
+export function selfTest(engine: OfpEngine, bundle: string, rounds?: number): { ok: boolean; power?: number; cadence?: number; msPerPacket?: number; error?: string }
 export function basic(fields: Record<string, number>): OfpBasic
 export function toHex(bytes: Uint8Array | number[]): string
 export function base64ToHex(base64: string): string
