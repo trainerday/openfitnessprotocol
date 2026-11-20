@@ -1,0 +1,12 @@
+id: 9
+key: firmware_build
+name: Firmware build
+unit: ""
+type: int
+min: 0
+max: 65535
+kind: state
+tier: experimental
+tolerance: { abs: 0, pct: 0 }
+description: >
+  The device's firmware build number, when it sends one with its data. Major * 256 + minor.

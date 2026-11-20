@@ -1,0 +1,18 @@
+[workspace]
+resolver = "2"
+members = ["crates/ofp-core", "crates/ofp-ffi", "crates/ofp-capture", "crates/ofp-cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/trainerday/openfitnessprotocol"
+
+[workspace.dependencies]
+serde = { version = "1.0.229", default-features = false, features = ["derive", "alloc"] }
+serde_json = { version = "1.0.154", default-features = false, features = ["alloc"] }
+
+[profile.release]
+opt-level = "s"
+lto = true
+panic = "abort"

@@ -1,0 +1,12 @@
+id: 8
+key: energy
+name: Energy
+unit: kcal
+type: int
+min: 0
+max: 20000
+kind: cumulative
+tier: experimental
+tolerance: { abs: 3, pct: 5 }
+description: >
+  Energy the rider has used in this session, in kilocalories, as the machine estimates it.

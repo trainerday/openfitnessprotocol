@@ -1,0 +1,69 @@
+# Single packets with known answers. Hand-made from the layout (not captures): they pin the rules
+# the real capture next to this file may not exercise (miles, the emulator's bare payload, …).
+- name: live packet, company id 0x0102
+  manufacturer_data: "0201 06 30 00 07 4803 8c05 bb00 2a00 0c 22 3380 0e"
+  expect:
+    source_id: "keiser-m3i:7"
+    fields: { cadence: 84, heart_rate: 142, power: 187, energy: 42, elapsed_time: 754, distance: 5100, gear: 14, firmware_build: 1584 }
+
+- name: Keiser's registered company id 0x0645
+  manufacturer_data: "4506 06 30 00 07 4803 8c05 9600 2a00 0c 22 3380 0e"
+  expect:
+    source_id: "keiser-m3i:7"
+    fields: { power: 150 }
+
+- name: bare payload (no company id) from a device named M3i-0007
+  device_name: M3i-0007
+  manufacturer_data: "06 30 00 07 4803 8c05 bb00 2a00 0c 22 3380 0e"
+  expect:
+    source_id: "keiser-m3i:7"
+    fields: { power: 187, cadence: 84 }
+
+- name: bare payload from a device named M3
+  device_name: M3
+  manufacturer_data: "06 30 00 07 4803 8c05 bb00 2a00 0c 22 3380 0e"
+  expect:
+    source_id: "keiser-m3i:7"
+    fields: { power: 187 }
+
+- name: bare payload from a device with another name is not ours
+  device_name: Some Watch
+  manufacturer_data: "06 30 00 07 4803 8c05 bb00 2a00 0c 22 3380 0e"
+  expect: none
+
+- name: bare payload with no name is not ours
+  manufacturer_data: "06 30 00 07 4803 8c05 bb00 2a00 0c 22 3380 0e"
+  expect: none
+
+- name: distance in miles becomes metres
+  manufacturer_data: "0201 06 30 00 07 4803 8c05 bb00 2a00 0c 22 0a00 0e"
+  expect:
+    source_id: "keiser-m3i:7"
+    fields: { distance: 1609 }
+
+- name: an averages packet (type 0xff) is skipped
+  manufacturer_data: "0201 06 30 ff 07 4803 8c05 bb00 2a00 0c 22 3380 0e"
+  expect: none
+
+- name: another maker's company id is not ours, even when named M3i
+  device_name: M3i
+  manufacturer_data: "4c00 06 30 00 07 4803 8c05 bb00 2a00 0c 22 3380 0e"
+  expect: none
+
+- name: a short packet is not ours
+  manufacturer_data: "0201 06 30 00 07 4803 8c05"
+  expect: none
+
+- name: builds before 0x21 have no gear byte
+  manufacturer_data: "0201 06 20 00 07 4803 8c05 bb00 2a00 0c 22 3380 0e"
+  expect:
+    source_id: "keiser-m3i:7"
+    fields: { power: 187 }
+    absent: [gear]
+
+- name: the real bike at rest (bike 197, build 6.40, gear 4)
+  device_name: M3
+  manufacturer_data: "0201064000c50000000000000000001a008004"
+  expect:
+    source_id: "keiser-m3i:197"
+    fields: { power: 0, cadence: 0, heart_rate: 0, elapsed_time: 26, distance: 0, gear: 4, firmware_build: 1600 }

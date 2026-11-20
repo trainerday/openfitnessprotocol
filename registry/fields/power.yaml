@@ -1,0 +1,12 @@
+id: 1
+key: power
+name: Power
+unit: W
+type: int
+min: 0
+max: 3000
+kind: instantaneous
+tier: experimental
+tolerance: { abs: 10, pct: 8 }
+description: >
+  Mechanical power the rider is producing right now, in watts.

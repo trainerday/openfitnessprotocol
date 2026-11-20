@@ -1,0 +1,18 @@
+[package]
+name = "ofp-capture"
+description = "The OFP capture file (what a device really sent, with the rider's notes) and Bluetooth recording."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+ble = ["dep:btleplug", "dep:tokio", "dep:futures", "dep:uuid"]
+
+[dependencies]
+serde = { workspace = true, features = ["std"] }
+serde_json = { workspace = true, features = ["std"] }
+btleplug = { version = "0.13.5", optional = true }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "sync", "time"], optional = true }
+futures = { version = "0.3.34", optional = true }
+uuid = { version = "1.29.3", optional = true }

@@ -1,0 +1,25 @@
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown, thumbv7em-none-eabihf
+      - uses: Swatinem/rust-cache@v2
+      # Everything except the Bluetooth commands, which need a radio.
+      - name: Tests
+        run: cargo test -p ofp-core -p ofp-ffi -p ofp-capture && cargo test -p ofp-cli --no-default-features
+      - name: The core builds for a microcontroller (no_std)
+        run: cargo build -p ofp-core --target thumbv7em-none-eabihf
+      - name: Registry check (fields, tables, vectors, captures)
+        run: cargo run -p ofp-cli --no-default-features -- check
+      - name: WebAssembly core and bundle
+        run: scripts/build.sh

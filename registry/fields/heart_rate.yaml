@@ -1,0 +1,13 @@
+id: 3
+key: heart_rate
+name: Heart rate
+unit: bpm
+type: decimal
+decimals: 1
+min: 0
+max: 255
+kind: instantaneous
+tier: experimental
+tolerance: { abs: 4, pct: 4 }
+description: >
+  Heart beats per minute right now. Zero when the device has no heart-rate sensor paired.

@@ -1,0 +1,52 @@
+id: keiser-m3i
+name: Keiser M3i
+reader: broadcast
+version: 1
+status: experimental
+
+# Where this knowledge comes from, and what it was checked on.
+provenance: >
+  The packet layout used by TrainerDay's own M3i bridge and test emulator, checked against our own
+  captures of a real bike. No code from other projects.
+verified_on:
+  - Keiser M3i, build 6.40 (bike advertises as "M3", company id 0x0102)
+
+# The bike never accepts a connection: every reading is in the advertisement's manufacturer data.
+# Offsets below count from the start of the payload, after the 2-byte company id.
+#
+#   0     build major          1     build minor
+#   2     packet type: 0 = live values, anything else = averages / review screens
+#   3     bike number (set on the console)
+#   4-5   cadence x 10         6-7   heart rate x 10
+#   8-9   power, watts         10-11 energy, kcal
+#   12    minutes  13 seconds  (elapsed)
+#   14-15 distance x 10; top bit set = kilometres, clear = miles
+#   16    gear (builds from 0x21 on)
+match:
+  - manufacturer_id: 0x0102     # what the bike sends today
+    min_length: 17
+  - manufacturer_id: 0x0645     # Keiser's registered company id, in case newer firmware uses it
+    min_length: 17
+  - name_prefix: M3             # some Bluetooth stacks and test emulators give the payload with no company id
+    min_length: 17
+    when: u8[0] == 6
+
+only_when: u8[2] == 0
+
+instance:
+  label: bike
+  value: u8[3]
+
+stale_after_ms: 3000
+
+fields:
+  power: u16le[8]
+  cadence: u16le[4] / 10
+  heart_rate: u16le[6] / 10
+  energy: u16le[10]
+  elapsed_time: u8[12] * 60 + u8[13]
+  distance: "(u16le[14] & 0x7fff) / 10 * (u16le[14] & 0x8000 ? 1000 : 1609.344)"
+  gear:
+    value: u8[16]
+    only_when: u8[1] >= 0x21
+  firmware_build: u8[0] * 256 + u8[1]

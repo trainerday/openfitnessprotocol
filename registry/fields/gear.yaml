@@ -1,0 +1,12 @@
+id: 5
+key: gear
+name: Gear
+unit: ""
+type: int
+min: 0
+max: 100
+kind: state
+tier: experimental
+tolerance: { abs: 0, pct: 0 }
+description: >
+  The gear or resistance level the machine shows (a step number, not a force).

@@ -1,0 +1,14 @@
+id: 4
+key: speed
+name: Speed
+unit: km/h
+type: decimal
+decimals: 1
+min: 0
+max: 150
+kind: instantaneous
+tier: experimental
+tolerance: { abs: 1, pct: 5 }
+description: >
+  Speed right now, in kilometres per hour. On a stationary machine this is the machine's own
+  estimate.

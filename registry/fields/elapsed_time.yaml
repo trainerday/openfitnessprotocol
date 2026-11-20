@@ -1,0 +1,12 @@
+id: 6
+key: elapsed_time
+name: Elapsed time
+unit: s
+type: int
+min: 0
+max: 360000
+kind: cumulative
+tier: experimental
+tolerance: { abs: 5, pct: 0 }
+description: >
+  Seconds since the session started on the machine, as the machine counts them.

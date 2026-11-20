@@ -1,0 +1,12 @@
+id: 7
+key: distance
+name: Distance
+unit: m
+type: int
+min: 0
+max: 2000000
+kind: cumulative
+tier: experimental
+tolerance: { abs: 200, pct: 3 }
+description: >
+  Distance covered in this session, in metres, as the machine counts it.

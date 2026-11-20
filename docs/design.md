@@ -1,7 +1,8 @@
 # Open Fitness Protocol (OFP) — design
 
-Status: **draft, nothing built yet.** This records the design sessions of 2026-11-20. Everything
-can still change until 1.0. Parts marked *unproven* have not been prototyped.
+Status: **first version built** (core, broadcast reader, one table, the `ofp` command). Everything
+can still change until 1.0. Parts marked *unproven* have not been prototyped; the sections marked
+*as built* describe what the code does today.
 
 ## The idea in one paragraph
 
@@ -41,8 +42,9 @@ one paragraph saying what it means.
 - **Two tiers.** `experimental` passes the format check and is merged (there is also a private-use
   id range that needs no pull request). `stable` needs a working implementation, a real capture, and
   a fixed number of days with no objection.
-- **Sample kinds.** `instantaneous` (power now), `event` (one breath, one button press),
-  `cumulative` (total crank revolutions).
+- **Sample kinds.** `instantaneous` (power now; reads as zero when the source goes silent),
+  `event` (one breath, one button press), `cumulative` (a running total such as energy), `state`
+  (a setting that is neither a rate nor a total, such as the gear).
 - **Superset of existing standards.** Every field in Heart Rate, Cycling Power, Cycling Speed and
   Cadence, Running Speed and Cadence and FTMS has a registry id from the start.
 - **Values keep their context.** Power from a trainer, from a crank and from an estimate are not
@@ -93,6 +95,56 @@ phone apps.
 Tables live in this repo. Every table ships with a real capture and the expected output; the
 automated checks replay it.
 
+#### The table language
+
+*As built.* A table is a YAML file in `registry/tables/`. The full example is
+`registry/tables/keiser-m3i.yaml`.
+
+| Setting | Meaning |
+|---|---|
+| `id`, `name`, `version`, `status` | Identity. `id` is also the file name |
+| `reader` | `broadcast` (the only reader so far) |
+| `provenance`, `verified_on` | Where the knowledge comes from; the device and firmware it was checked on. Required |
+| `match` | A list of rules; the first that fits wins. `manufacturer_id` (the Bluetooth company id at the start of the manufacturer data), `name_prefix`, `min_length` of the payload, and an optional `when` condition. A rule with no `manufacturer_id` reads a bare payload and must give `name_prefix` |
+| `only_when` | Packets where this is false are ignored |
+| `instance` | `label` and `value`: what tells two identical devices apart. It becomes part of the source id (`keiser-m3i:197`) |
+| `stale_after_ms` | After this long without a packet, instantaneous fields read as zero |
+| `fields` | Field key → expression, or `{ value, only_when }` |
+
+Expressions read bytes from the payload (positions count from its start, after the company id) and
+combine them:
+
+```text
+u8[3]  i8[3]  u16le[4]  u16be[4]  i16le[4]  i16be[4]  u24le[4]  u32le[4]
+12   0x7fff   1609.344
+* /   then   + -   then   << >>   then   &   then   ^   then   |
+== != < <= > >=   then   &&   then   ||   then   condition ? a : b
+!x   -x   ( … )
+```
+
+Bit operators bind tighter than comparisons, so `u8[2] & 0x80 == 0` means what it reads like.
+There are no variables, loops or functions. Expressions are parsed when the registry is compiled;
+the core receives a small tree (at most 16 levels and 64 nodes) and only evaluates it. A read
+outside the packet or a division by zero gives no value for that field.
+
+The compiled form is the **bundle** (`registry.bundle.json`): all fields and tables in one JSON
+file, which is what the core loads.
+
+#### How a table is proven
+
+*As built.* Evidence lives next to the table and `ofp check` replays all of it:
+
+- **A capture** (`<table>.capture.jsonl`, see `capture-format.md`): everything the device sent
+  during a real session, plus what the rider typed. A **note** with values (`power=150`) is what the
+  device's own display showed at that moment; the decoded value must be within the field's
+  tolerance of it. A **confirmation** is the rider's answer in `ofp live` to "does the display show
+  the same?": a confirmed value must decode to exactly the same number from then on, and a value
+  marked wrong fails the check until the table decodes what the display showed.
+- **Vectors** (`<table>.vectors.yaml`): single packets with known answers, for rules the capture
+  does not exercise (another unit, an older firmware, a packet that must be refused).
+
+A table whose fields its author has confirmed is at the "Submitted" level below.
+
 ### 4. Output
 
 One GATT-style profile: the source describes its fields once (id, unit, type, name, sample kind,
@@ -118,6 +170,26 @@ The small interface between Core and its host (advertisement seen, connect, subs
 disconnected) is part of the standard and is frozen like stable fields. It does not assume a single
 radio. Broadcast-only devices put one real requirement on the host: continuous scanning with
 duplicates during the session.
+
+#### The host interface
+
+*As built, for broadcast devices.* The core is a Rust library (`crates/ofp-core`, `no_std`). Hosts
+that are not written in Rust use five plain C functions (`crates/ofp-ffi`), the same for
+WebAssembly and native builds; requests and replies are JSON:
+
+| Request | When |
+|---|---|
+| `{"op":"advertisement","device_id":…,"name":…,"rssi":…,"manufacturer_data":"<hex, company id first>","now_ms":…}` | For every advertisement the host hears, from any device |
+| `{"op":"tick","now_ms":…}` | About once a second |
+| `{"op":"configure","min_stale_ms":…}` | Optional: a host whose radio misses many advertisements can wait longer than a table says before a source counts as silent |
+
+| Message in the reply | Meaning |
+|---|---|
+| `source_appeared` | Sent once per source, before its first values: source id, name, and the description of every field it sends (id, name, unit, type, range, kind, tier) |
+| `values` | `source_id`, time, field key → value. Values outside a field's plausible range are left out and listed in `out_of_range`. `stale: true` marks the zeros sent when a source goes silent |
+| `source_stale` | No packet for the stale time. Values resume later without a new `source_appeared` |
+
+Connecting, subscribing and writing are not in this version; they arrive with the notify readers.
 
 Core is written in **Rust** and compiled for desktop, iOS, Android and microcontrollers, so a table
 behaves the same everywhere. The automated checks apply a microcontroller's memory and time limits
@@ -298,8 +370,9 @@ deliberate escape hatch; write down change rules and patent terms early.
 
 ## Open questions
 
-- The table language: exact syntax for conditions, masks and arithmetic.
-- The description and value layout, and how long descriptions are split over BLE.
+- The over-the-air form of the output (the description and value layout; today the messages exist
+  only as JSON inside the host).
+- How long descriptions are split over BLE.
 - How official tables are signed and delivered to apps (a signed index on static hosting is the
   working idea), and offline behaviour.
 - How long "no objection" lasts and how many approvals a stable change needs.

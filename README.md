@@ -3,8 +3,8 @@
 **One open way for any fitness device to talk to any fitness app — with rules that live in a git
 repo, not in a committee.**
 
-> **Status: early design.** There is nothing to install yet. This page says what we are building
-> and why. The details are in the [design document](docs/design.md), and all of it can still change.
+> **Status: first version.** The core, the `ofp` command and one device (the Keiser M3i) work.
+> Everything can still change until 1.0. The details are in the [design document](docs/design.md).
 
 ---
 
@@ -111,21 +111,28 @@ flowchart LR
 | **Table** | A small data file that tells a reader about one specific device | Anyone, by pull request |
 | **Output** | One standard stream that describes its values and then sends them | Built in |
 
-A table could look something like this (an illustration; the real syntax is not decided yet):
+This is the real table for the Keiser M3i, shortened
+([the full file](registry/tables/keiser-m3i.yaml)):
 
 ```yaml
-device: Keiser M3i
+id: keiser-m3i
+name: Keiser M3i
 reader: broadcast
 match:
-  name_starts_with: "M3"
-only_when: byte[2] == 0          # real-time packets only
-pick_one_by: byte[3]             # the bike number, so you can choose yours
-zero_after_silence: 3s
+  - manufacturer_id: 0x0102
+    min_length: 17
+only_when: u8[2] == 0            # live packets only
+instance:                        # the bike number, so you can choose yours
+  label: bike
+  value: u8[3]
+stale_after_ms: 3000             # after 3 s of silence, power and cadence read as zero
 fields:
-  cadence:    u16le[4] / 10      # rpm
+  power: u16le[8]                # watts
+  cadence: u16le[4] / 10         # rpm
   heart_rate: u16le[6] / 10      # bpm
-  power:      u16le[8]           # watts
-  gear:       byte[16]
+  gear:
+    value: u8[16]
+    only_when: u8[1] >= 0x21     # newer builds only
 ```
 
 That is the whole "driver" for that bike.
@@ -177,9 +184,35 @@ Ways to help, from easiest to hardest:
 - **Request a reader** when a device sends data in a way no existing reader understands.
 - **Help build the core** (Rust).
 
-While the project is in the design stage, the most useful contribution is feedback on the
-[design document](docs/design.md): what is unclear, what is missing, and which device you would
-want first.
+### Try it
+
+You need [Rust](https://rustup.rs). The Bluetooth commands are tested on macOS so far; the library
+they use also supports Windows and Linux.
+
+```bash
+cargo build --release          # the command is target/release/ofp
+ofp check                      # what every pull request must pass
+ofp scan                       # devices in range, with how often each one is heard
+ofp live                       # decoded values of a device a table knows, as large numbers
+```
+
+### Add a device
+
+1. **Scan.** `ofp scan` lists what is in range. Note your device's name.
+2. **Record, with notes.** `ofp record "<name>"` saves everything the device sends into a capture
+   file (add `--connect` for a device that must be connected to). While it records, type what the
+   device's own display shows, for example `power=150 cadence=82`, and press Enter. Do that at a
+   few steady moments. `ofp inspect <file>` then shows which bytes change.
+3. **Write the table**: `registry/tables/<your-device>.yaml`, with the capture next to it as
+   `<your-device>.capture.jsonl`. `ofp check` replays the capture and compares the table's values
+   with your notes.
+4. **Watch it live and confirm.** `ofp live` shows each value as the table decodes it. Press a
+   value's number and say whether the device's display shows the same. Your answers are saved in
+   the capture; from then on the checks hold the table to them.
+5. **Open a pull request** with the table and the confirmed capture.
+
+The capture file is described in [docs/capture-format.md](docs/capture-format.md), the table
+language in the [design document](docs/design.md#the-table-language).
 
 ## The rules, briefly
 
@@ -197,6 +230,8 @@ want first.
 ## Read more
 
 - [Design document](docs/design.md): the full design, what comes later, and the open questions.
+- [Capture format](docs/capture-format.md): the file a recording is saved in.
+- [`crates/ofp-ffi`](crates/ofp-ffi/src/lib.rs): the five functions an app calls.
 
 ## Thanks
 

@@ -1,0 +1,13 @@
+id: 2
+key: cadence
+name: Cadence
+unit: rpm
+type: decimal
+decimals: 1
+min: 0
+max: 300
+kind: instantaneous
+tier: experimental
+tolerance: { abs: 4, pct: 5 }
+description: >
+  Crank revolutions per minute right now.
