@@ -1,1 +1,18 @@
-[]
+[
+  {
+    "version": "0.1.0",
+    "date": "2026-11-20",
+    "files": {
+      "mac": {
+        "url": "https://openfitnessprotocol.org/download/mac/OFP-Studio-0.1.0-mac.dmg",
+        "size": 5062629,
+        "sha256": "99e8a3929f8783fce1f618e6c1a71ee585aeef72bf9748d1e5588daa66fd3eae"
+      },
+      "windows": {
+        "url": "https://openfitnessprotocol.org/download/windows/OFP-Studio-0.1.0-windows-setup.exe",
+        "size": 1693400,
+        "sha256": "023426271b07bf2751f8355e57f4b19c21806c90fb7103289b8b1fc93e5d0b8a"
+      }
+    }
+  }
+]
