@@ -591,6 +591,15 @@ mod tests {
         assert_eq!((v["speed"], v["cadence"], v["energy"], v["resistance"], v["heart_rate"]), (25.0, 90.0, 45.0, 8.0, 140.0));
         // the answers to the start frames are not data
         assert_eq!(check_lines(&reg, None, "test", &connected_capture("Domyos-Bike-1234", svc, chr, &["f0c8 01 b9 0000000000000000000000000000"], &[])).decoded, 0);
+        // iConsole+: each byte is 0-99 plus 1, pairs are high x 100 + low (the spec's example)
+        let svc = "49535343-fe7d-4ae5-8fa9-9fafd205e455";
+        let (source, v) = last_values(&reg, &connected_capture("IBIKING+ 22", svc, chr, &["f0b2 0101 06 03 0336 0156 0101 012b 0221 1001 09 0100"], &[]));
+        assert!(source.starts_with("iconsole-bike:"), "{source}");
+        assert_eq!((v["speed"], v["cadence"], v["energy"], v["heart_rate"], v["power"], v["resistance"]), (25.3, 85.0, 42.0, 132.0, 150.0, 8.0));
+        // Nautilus: 85 rpm, 15.00 mph = 24.1 km/h, 180.00 W
+        let (source, v) = last_values(&reg, &connected_capture("NAUTILUS B628", "b1f93401-d4bd-4839-b7d7-b7434e9656cc", "a46a4a80-9803-11e3-8f3c-0002a5d5c51b", &["00 55 00 dc05 00 5046 00000000 0000"], &[]));
+        assert!(source.starts_with("nautilus-bike:"), "{source}");
+        assert_eq!((v["cadence"], v["speed"], v["power"]), (85.0, 24.1, 180.0));
         // both declare their writes, none to a control point
         for id in ["yesoul-classic-bike", "domyos-bike"] {
             let t = reg.bundle.tables.iter().find(|t| t.id == id).unwrap();

@@ -1,6 +1,6 @@
 // Builds the site's pages into site/dist/ from CHANGELOG.md (the notes) and site/releases.json (what was
 // published: version, date, file, size, sha256). No dependencies: `node site/build.mjs`.
-import { readFileSync, writeFileSync, mkdirSync, rmSync, copyFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, rmSync, copyFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -102,6 +102,20 @@ function home(latest) {
   <h2>Got a device that doesn't work?</h2>
   <p>Install OFP Studio and test it: wake the device, click <b>Use</b>, and see what it sends. Then give the recording and this project to an AI assistant (Claude, ChatGPT, any that can read code), and it can set the device up for you. You check the numbers against the device's own display, and send it in.</p>
   <div class="actions">${studio}</div>
+  <div class="shots">
+    <a href="/images/studio-connect.png" class="shot-link" data-shot><img class="shot" src="/images/studio-connect.png" width="1030" height="567" alt="OFP Studio, step 1: the Bluetooth devices nearby, each with a Connect button and what OFP reads it as"><span>1 · Connect your Bluetooth device</span></a>
+    <a href="/images/studio-check.png" class="shot-link" data-shot><img class="shot" src="/images/studio-check.png" width="1015" height="511" alt="OFP Studio, step 2: the device's numbers, each with Looks right or Looks wrong"><span>2 · Check your numbers, then send</span></a>
+  </div>
+  <dialog id="shot-big" onclick="this.close()"><img alt=""></dialog>
+  <script>
+    for (const a of document.querySelectorAll('[data-shot]')) a.addEventListener('click', (e) => {
+      e.preventDefault();
+      const d = document.getElementById('shot-big');
+      d.querySelector('img').src = a.href;
+      d.querySelector('img').alt = a.querySelector('img').alt;
+      d.showModal();
+    });
+  </script>
 </section>
 
 <section>
@@ -209,6 +223,8 @@ export function build() {
   writeFileSync(join(out, 'robots.txt'), `User-agent: *\nAllow: /\nSitemap: ${SITE}/sitemap.xml\n`);
   writeFileSync(join(out, 'sitemap.xml'), `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${['/', '/download', '/releases'].map((p) => `<url><loc>${SITE}${p}</loc></url>`).join('')}</urlset>\n`);
   copyFileSync(join(here, 'style.css'), join(out, 'style.css'));
+  mkdirSync(join(out, 'images'), { recursive: true });
+  for (const f of readdirSync(join(here, 'images'))) copyFileSync(join(here, 'images', f), join(out, 'images', f));
   return { latest, versions: list.length };
 }
 

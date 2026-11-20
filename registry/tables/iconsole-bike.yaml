@@ -1,0 +1,55 @@
+id: iconsole-bike
+name: iConsole+ bike
+reader: notify
+version: 1
+status: draft
+provenance: >
+  Written from iconsole-bike.spec.md (facts learned from studying QZ, written down in a separate session;
+  this table was written without seeing QZ's code). The console's default variant (address 01 01); consoles on the FFF0 service and the other names in the spec are not covered. Not yet checked on a bike.
+verified_on:
+  - not verified on a bike yet
+
+match:
+  - name_prefix: CARE11216+
+    service: 49535343-fe7d-4ae5-8fa9-9fafd205e455
+  - name_prefix: IBIKING+
+    service: 49535343-fe7d-4ae5-8fa9-9fafd205e455
+
+notify:
+  service: 49535343-fe7d-4ae5-8fa9-9fafd205e455
+  characteristic: 49535343-1e4d-4bd9-ba61-23c647249616
+  min_length: 21
+
+# Fixed start frames, then one fixed poll. TO CHECK ON A BIKE: the spec says the other app left about
+# 400-700 ms between start frames on some consoles; OFP writes them one after the other.
+start:
+  service: 49535343-fe7d-4ae5-8fa9-9fafd205e455
+  characteristic: 49535343-8841-43f4-a8d4-ecbe34729bb3
+  frames: ["f0 a0 01 01 92", "f0 a1 01 01 93", "f0 a3 01 01 01 96", "f0 a5 01 01 02 99", "f0 a6 01 01 06 9e"]
+
+poll:
+  service: 49535343-fe7d-4ae5-8fa9-9fafd205e455
+  characteristic: 49535343-8841-43f4-a8d4-ecbe34729bb3
+  frames: ["f0 a2 01 01 94"]
+  every_ms: 300
+
+# The data: 21 bytes. Numbers are not binary: each byte is a value 0-99 plus 1, and two bytes are
+# high x 100 + low. 6-7 speed (0.1 km/h), 8-9 cadence (rpm), 12-13 energy (kcal), 14-15 heart rate
+# (0 = none), 16-17 power (0.1 W), 18 resistance level (byte - 1).
+# TO CHECK ON A BIKE: that the data comes on this characteristic (the console has a second notify
+# characteristic, 49535343-4c8a-39b3-2f49-511cff073b7e), and that only data packets are 21 bytes long.
+stale_after_ms: 5000
+
+fields:
+  speed: ((u8[6] - 1) * 100 + (u8[7] - 1)) / 10
+  cadence: (u8[8] - 1) * 100 + (u8[9] - 1)
+  energy: (u8[12] - 1) * 100 + (u8[13] - 1)
+  heart_rate:
+    value: (u8[14] - 1) * 100 + (u8[15] - 1)
+    only_when: (u8[14] - 1) * 100 + (u8[15] - 1) > 0
+  power:
+    value: ((u8[16] - 1) * 100 + (u8[17] - 1)) / 10
+    only_when: (u8[8] - 1) * 100 + (u8[9] - 1) > 0
+  resistance:
+    value: u8[18] - 1
+    only_when: u8[18] >= 1

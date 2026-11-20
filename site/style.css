@@ -83,3 +83,13 @@ footer.bottom p { margin: 4px 0; }
 .mark-yes, .mark-no { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; color: #fff; font-size: 16px; font-weight: 800; margin-right: 6px; vertical-align: -3px; }
 .mark-yes { background: #12805c; }
 .mark-no { background: #c0362c; }
+.shot { display: block; width: 100%; height: auto; margin-top: 20px; border-radius: 12px; border: 1px solid var(--line); box-shadow: 0 8px 30px rgba(23, 22, 38, .12); }
+.shots { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 20px; }
+.shot-link { display: block; color: var(--muted); font-size: 14px; text-decoration: none; }
+.shot-link:hover { text-decoration: none; }
+.shot-link .shot { margin: 0 0 6px; cursor: zoom-in; transition: transform .15s; }
+.shot-link:hover .shot { transform: translateY(-2px); }
+#shot-big { border: 0; padding: 0; background: transparent; max-width: 92vw; cursor: zoom-out; }
+#shot-big::backdrop { background: rgba(10, 10, 20, .75); }
+#shot-big img { display: block; max-width: 92vw; max-height: 88vh; border-radius: 10px; }
+@media (max-width: 640px) { .shots { grid-template-columns: 1fr; } }

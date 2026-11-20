@@ -153,3 +153,26 @@ Out of respect for QZ's author, only three start-command bikes were chosen to be
   the name, so a table could not pick the right sequence by itself.
 
 The other start-command bikes in the table above are left for owners to record themselves.
+
+## Two more start-command families taken from QZ
+
+Chosen by the project owner (2026-11-20) because each covers many bikes. Written the same
+clean-room way, in a separate session; tables are still to be written from the specs alone.
+
+- [`iconsole-bike.spec.md`](../../registry/tables/iconsole-bike.spec.md): the iConsole+ / Toorx
+  family. Two variants are covered: the default one (start and poll frames with address `01 01`:
+  `CARE11216+`, `IBIKING+`, names containing `RI009R`, and with QZ's Toorx option `TOORX`,
+  `I-CONSOLE+`, `ICONSOLE+`, `…CR011R…`) and the "3.0" one (address `23 D3`: `TC` + three digits,
+  and the same Toorx/iConsole names on newer consoles). Every frame is fixed and ends in a sum of
+  its own bytes. **Not covered:** bikes whose Bluetooth address starts `E8` and the Enerfit / Hammer
+  options (address `23 01`), FitHiWay, Hertz XR-770, Tunturi `TUN `, BodySculpture, VirtuFit /
+  `VIFHTR`, Reebok, Adidas, Bikzu, FAL-Sports, DKN Motion, Casall `I-CONSOIE+`, Hop-Sport,
+  Toorx SRX 500, Taurua IC90, Fytter RI08, Asviva, JLL IC400 (its poll changes on every write, so
+  it would be stopped anyway) and `PASYOU-` (QZ never decodes its data). The spec lists each.
+- [`schwinn-nautilus-bike.spec.md`](../../registry/tables/schwinn-nautilus-bike.spec.md): Nautilus
+  bikes (`NAUTILUS B`) and Schwinn 170/270 (`SCHWINN 170/270`) in one spec, since they share the
+  characteristics, the one fixed 7-byte start frame `07 01 D3 00 1F 05 01` and the power / speed /
+  resistance packets. Note for the table above: `1717B3C0-…` and `5EC4E520-…` are characteristics,
+  not services. **Not covered:** Schwinn 170/270 cadence, which QZ works out from a running counter
+  and the phone's own clock (the packet has no event time QZ uses), and Schwinn 170/270 heart rate,
+  which QZ does not read.

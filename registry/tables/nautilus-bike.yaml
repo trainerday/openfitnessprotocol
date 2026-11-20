@@ -1,0 +1,40 @@
+id: nautilus-bike
+name: Nautilus bike
+reader: notify
+version: 1
+status: draft
+provenance: >
+  Written from schwinn-nautilus-bike.spec.md (facts learned from studying QZ, written down in a separate
+  session; this table was written without seeing QZ's code). Nautilus bikes on the first of their three
+  services only; the Schwinn 170/270 is not covered (its cadence is not in a form a table can read). Not
+  yet checked on a bike.
+verified_on:
+  - not verified on a bike yet
+
+match:
+  - name_prefix: NAUTILUS B
+    service: b1f93401-d4bd-4839-b7d7-b7434e9656cc
+
+notify:
+  service: b1f93401-d4bd-4839-b7d7-b7434e9656cc
+  characteristic: a46a4a80-9803-11e3-8f3c-0002a5d5c51b
+  min_length: 14
+
+start:
+  service: b1f93401-d4bd-4839-b7d7-b7434e9656cc
+  characteristic: 1717b3c0-9803-11e3-90e1-0002a5d5c51b
+  with_response: true
+  frames: ["07 01 d3 00 1f 05 01"]
+
+# The 14-byte packet, little-endian: 1 cadence (rpm), 3-4 speed (0.01 mph on this service), 6-7 power
+# (0.01 W). TO CHECK ON A BIKE: which of the two notify characteristics carries it (the other one,
+# 6be8f580-…, may), and that the 20-byte packet (resistance, heart rate) does not come here too:
+# a table cannot yet tell packets apart by their length.
+stale_after_ms: 5000
+
+fields:
+  cadence: u8[1]
+  speed: u16le[3] / 100 * 1.609344
+  power:
+    value: u16le[6] / 100
+    only_when: u8[1] > 0

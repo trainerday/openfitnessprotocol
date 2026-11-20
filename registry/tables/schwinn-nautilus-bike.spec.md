@@ -174,4 +174,4 @@ Unmarked bytes are placeholders.
 - What the start frame's bytes mean, and whether the Schwinn needs it on more than the two named
   characteristics.
 - The Schwinn 170/270 speed unit, and whether its 17-byte packet has a usable event time.
-- Whether the Schwinn 270's 14-byte byte 1 is cadence as on the Nautilus (QZ does not read it).
+- Whether the Schwinn 170/270's 14-byte byte 1 is cadence as on the Nautilus (QZ does not read it).

@@ -9,6 +9,11 @@ repo, not in a committee.**
 device, click **Use**, and see what it sends. If nothing reads it yet, save the recording and give it, with
 this project, to an AI assistant: it can set the device up for you.
 
+<table><tr>
+<td width="50%"><img src="docs/images/studio-connect.png" alt="OFP Studio, step 1: the Bluetooth devices nearby, each with a Connect button"><br><sub>1 · Connect your Bluetooth device</sub></td>
+<td width="50%"><img src="docs/images/studio-check.png" alt="OFP Studio, step 2: the device's numbers, each with Looks right or Looks wrong"><br><sub>2 · Check your numbers, then send</sub></td>
+</tr></table>
+
 **OFP reads data; it does not control devices.**
 
 - ✅ **Reading fitness data: yes.** a Concept2 rower, a power meter, a heart rate strap, a bike that only broadcasts its numbers, a
