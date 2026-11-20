@@ -189,9 +189,12 @@ pub fn check_lines(reg: &Registry, table: Option<&str>, shown: &str, lines: &[Li
                     }
                 } else {
                     refuted += 1;
+                    // A "wrong" stays open until the rider later says the same value is right (they looked
+                    // again after the table was changed), or the table now decodes what the display showed.
+                    let later_right = lines.iter().any(|l| matches!(l, Line::Confirm { t: t2, source_id: s2, field: f2, ok: true, .. } if t2 > t && f2 == field && s2.split(':').next() == source_id.split(':').next()));
                     let tol = reg.tolerance(field);
                     let fixed = console.is_some_and(|console| around(&c.timeline, field, *t).any(|d| tol.allows(d, console)));
-                    if !fixed {
+                    if !later_right && !fixed {
                         let console = console.map(|c| format!("the console showed {c}")).unwrap_or_else(|| "no console value was given".into());
                         errors.push(format!("{shown}: the rider marked {field} wrong at {:.0} s (OFP showed {value}, {console})", *t as f64 / 1000.0));
                     }
@@ -406,6 +409,15 @@ mod tests {
         let (dir, _) = capture_with(&[r#"{"type":"note","t":2100,"text":"power=250","values":{"power":250}}"#]);
         let e = problems(&dir);
         assert!(e.iter().any(|e| e.contains("noted power=250") && e.contains("decodes 187")), "{e:#?}");
+
+        // "no, this is wrong" with nothing else fails; the same rider saying "yes" later clears it
+        let (dir, _) = capture_with(&[r#"{"type":"confirm","t":1300,"source_id":"keiser-m3i:7","field":"power","shown":187,"ok":false}"#]);
+        assert!(problems(&dir).iter().any(|e| e.contains("marked power wrong")));
+        let (dir, _) = capture_with(&[
+            r#"{"type":"confirm","t":1300,"source_id":"keiser-m3i:7","field":"power","shown":187,"ok":false}"#,
+            r#"{"type":"confirm","t":2100,"source_id":"keiser-m3i:7","field":"power","shown":187,"ok":true}"#,
+        ]);
+        assert_eq!(problems(&dir), Vec::<String>::new());
 
         // a value the rider marked wrong fails until the table decodes what the console showed
         let (dir, _) = capture_with(&[r#"{"type":"confirm","t":2200,"source_id":"keiser-m3i:7","field":"power","shown":187,"console":230,"ok":false}"#]);

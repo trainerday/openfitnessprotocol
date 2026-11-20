@@ -56,7 +56,11 @@ function toast(text, bad = false) {
 async function api(path, body) {
   const res = await fetch(path, body === undefined ? {} : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || res.statusText);
+  if (!res.ok) {
+    // The page believed a device was chosen and the Studio says otherwise (it was restarted): resync
+    if (/Choose a device/.test(data.error || '') && session()) { await reload(); setTab('devices'); throw new Error('The Studio was restarted: choose the device again.'); }
+    throw new Error(data.error || res.statusText);
+  }
   return data;
 }
 const guard = (fn) => async (...args) => { try { return await fn(...args); } catch (e) { toast(e.message, true); } };
@@ -114,6 +118,15 @@ function renderSoon() {
 
 function connectEvents() {
   const es = new EventSource('/api/events');
+  // The stream reconnects by itself when the Studio was restarted. The session lives in the Studio, so
+  // what this page shows may no longer be true: ask again, and say so if the device has to be chosen again.
+  let opened = false;
+  es.onopen = guard(async () => {
+    if (!opened) { opened = true; return; }
+    const had = !!session();
+    await reload();
+    if (had && !session()) { toast('The Studio was restarted: choose the device again.', true); setTab('devices'); }
+  });
   es.onmessage = guard(async (ev) => {
     const m = JSON.parse(ev.data);
     switch (m.type) {
@@ -124,9 +137,9 @@ function connectEvents() {
         if (!S.stream) { S.stream = m.stream; render(); } else renderSoon();
         break;
       case 'tx': Tester.onTx(m); if (m.error) toast(m.error, true); renderSoon(); break;
-      case 'note': if (S.capture) S.capture.notes.push(m); render(); break;
-      case 'confirm': if (S.capture) S.capture.confirms.push(m); renderSoon(); if (S.tab === 'live') render(); break;
-      case 'source': S.live.source = m.source; if (S.tab === 'live') render(); break;
+      case 'note': if (S.capture) S.capture.notes.push(m); if (S.tab === 'live') renderTiles(); else render(); break;
+      case 'confirm': if (S.capture) S.capture.confirms.push(m); renderSoon(); break;
+      case 'source': S.live.source = m.source; if (S.tab === 'live') renderTiles(); break;
       case 'values': Object.assign(S.live.values, m.fields); S.live.stale = !!m.stale; for (const k of m.out_of_range || []) delete S.live.values[k]; if (S.tab === 'live') renderTiles(); break;
       case 'recording': await loadState(); render(); break;
       case 'session': S.sel = []; S.expr = ''; S.series = null; S.solve = null; S.checked = null; S.saved = null; S.yamlDirty = false; S.live = { source: null, values: {}, stale: false }; await reload(); break;
@@ -186,6 +199,7 @@ function renderLive() {
   const st = $('#rec-stats');
   if (st) fillStats(st);
   if (S.tab === 'tester') renderTester();
+  if (S.tab === 'live') renderTiles();
 }
 
 function needSession(title) {
@@ -203,6 +217,15 @@ function viewDevices() {
   ));
   const caps = h('div', { class: 'panel' }, h('h2', {}, 'Or open a capture'), h('p', { class: 'hint' }, 'A recording made earlier, by this page or by `ofp record`. Works without a radio.'));
   if (!S.captures.length) caps.append(h('p', { class: 'muted' }, 'No captures yet.'));
+  // A recording someone sent you (they made it with this page and "Download the recording")
+  const pick = h('input', { type: 'file', accept: '.jsonl,.txt', onchange: guard(async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    await api('/api/capture/upload', { name: file.name, text: await file.text() });
+    toast('Opened ' + file.name);
+    setTab('live');
+  }) });
+  caps.append(h('div', { class: 'row', style: 'margin-bottom:10px' }, h('b', {}, 'A file someone sent you:'), pick));
   const list = h('ul', { class: 'list' });
   for (const c of S.captures) {
     list.append(h('li', {}, h('span', { class: 'mono fill' }, c.name), h('span', { class: 'badge' }, c.place),
@@ -214,28 +237,69 @@ function viewDevices() {
   return wrap;
 }
 
+/** Silent this long: the row is dimmed and cannot be chosen (the server drops it after a minute). */
+const DEVICE_QUIET_S = 20;
+const deviceRows = new Map(); // device id → its row: rows are updated in place, never rebuilt, so nothing blinks
+
 function renderDevicesTable() {
   const t = $('#devices-table');
   if (!t) return;
   const cur = session() && session().device_id;
-  t.replaceChildren(h('tr', {}, h('th', {}, 'Name'), h('th', {}, 'Sends'), h('th', { class: 'num' }, 'Heard / min'), h('th', { class: 'num' }, 'Longest gap'), h('th', { class: 'num' }, 'Signal'), h('th', {}, '')));
-  if (!S.devices.length) {
-    t.append(h('tr', {}, h('td', { colspan: 6, class: 'empty' }, S.radio.startsWith('error') ? S.radio.slice(7) : S.radio === 'off' ? 'This build has no Bluetooth: open a capture below.' : 'Listening…')));
-    return;
+  if (!t.tHead) {
+    deviceRows.clear();
+    t.replaceChildren();
+    t.createTHead().append(h('tr', {}, h('th', {}, 'Name'), h('th', {}, 'Sends'), h('th', { class: 'num' }, 'Heard / min'), h('th', { class: 'num' }, 'Longest gap'), h('th', { class: 'num' }, 'Signal'), h('th', {}, '')));
+    t.createTBody();
   }
+  const body = t.tBodies[0];
+  let empty = $('#devices-empty');
+  if (!S.devices.length) {
+    if (!empty) body.append(h('tr', { id: 'devices-empty' }, h('td', { colspan: 6, class: 'empty' })));
+    $('#devices-empty td').textContent = S.radio.startsWith('error') ? S.radio.slice(7) : S.radio === 'off' ? 'This build has no Bluetooth: open a capture below.' : 'Listening…';
+  } else if (empty) empty.remove();
+
+  const seen = new Set();
+  let previous = null;
   for (const d of S.devices) {
+    seen.add(d.device_id);
+    let row = deviceRows.get(d.device_id);
+    if (!row) {
+      // The chosen device keeps its button: "Open" goes back to it without starting over
+      const use = h('button', { class: 'small primary', onclick: guard(async () => {
+        if (!(session() && session().device_id === d.device_id)) await api('/api/session', { device_id: d.device_id });
+        setTab('record');
+      }) }, 'Use');
+      row = h('tr', {}, h('td', {}), h('td', { class: 'muted' }), h('td', { class: 'num' }), h('td', { class: 'num' }), h('td', { class: 'num' }), h('td', {}, use, h('span', { class: 'badge', hidden: true }, 'chosen')));
+      deviceRows.set(d.device_id, row);
+    }
+    // keep the server's order without moving rows that are already in place
+    const want = previous ? previous.nextSibling : body.firstChild;
+    if (want !== row) body.insertBefore(row, want);
+    previous = row;
+
+    const quiet = d.silent_s > DEVICE_QUIET_S;
     const sends = [];
     if (d.companies.length) sends.push('data in adverts (company ' + d.companies.map((c) => '0x' + c).join(', ') + ')');
     if (d.services.length) sends.push('services ' + d.services.map((u) => (u.length > 8 ? u.slice(0, 8) + '…' : u)).join(' '));
-    t.append(h('tr', {},
-      h('td', {}, d.name || h('span', { class: 'muted' }, '(no name)'), ' ', d.known ? h('span', { class: 'badge good', title: 'A table in the registry reads this device' }, d.known) : null),
-      h('td', { class: 'muted' }, sends.join(' · ') || '–'),
-      h('td', { class: 'num' }, d.per_min),
-      h('td', { class: 'num' }, d.longest_gap_s + ' s'),
-      h('td', { class: 'num' }, d.rssi == null ? '–' : d.rssi),
-      h('td', {}, d.device_id === cur ? h('span', { class: 'badge' }, 'chosen')
-        : h('button', { class: 'small primary', onclick: guard(async () => { await api('/api/session', { device_id: d.device_id }); setTab('record'); }) }, 'Use')),
-    ));
+    const set = (cell, text) => { if (cell.textContent !== text) cell.textContent = text; };
+    const name = (d.name || '(no name)') + (d.known ? '  ·  ' + d.known : '');
+    set(row.cells[0], name);
+    row.cells[0].className = d.name ? '' : 'muted';
+    set(row.cells[1], sends.join(' · ') || '–');
+    set(row.cells[2], String(d.per_min));
+    set(row.cells[3], d.longest_gap_s + ' s');
+    set(row.cells[4], quiet ? `silent ${d.silent_s} s` : d.rssi == null ? '–' : String(d.rssi));
+    row.style.opacity = quiet ? '.45' : '';
+    const [use, chosen] = row.cells[5].children;
+    const isCur = d.device_id === cur;
+    use.hidden = false;
+    set(use, isCur ? 'Open' : 'Use');
+    use.disabled = quiet && !isCur;
+    use.title = quiet ? 'Not heard for a while: wake the device' : '';
+    chosen.hidden = d.device_id !== cur;
+  }
+  for (const [id, row] of deviceRows) {
+    if (!seen.has(id)) { row.remove(); deviceRows.delete(id); }
   }
 }
 
@@ -342,7 +406,7 @@ function viewRecord() {
   for (const n of (S.capture ? S.capture.notes : []).slice().reverse()) notes.append(h('li', {}, h('span', { class: 'muted mono' }, secs(n.t)), h('span', {}, n.text)));
   wrap.append(h('div', { class: 'panel' },
     h('h2', {}, 'What the device’s own display shows'),
-    h('p', { class: 'hint' }, 'At a steady moment, type what you read on the device and press Enter. These are the known answers: “Find it for me” in the next step works from them. Two or three at different efforts are enough.'),
+    h('p', { class: 'hint' }, 'Only needed for a device no table reads yet. Hold a steady effort until the numbers on the device settle, then type what you read and press Enter. “Find it for me” in the next step works from these. Two or three at clearly different efforts are enough. (For a device that is already read, use Live: it only asks right or wrong.)'),
     h('div', { class: 'row' }, noteInput, h('button', { onclick: saveNote, disabled: !s.recording }, 'Save note')),
     h('div', { class: 'row', style: 'margin-top:8px' }, h('span', { class: 'muted' }, 'Fields:'),
       fields().map((f) => h('button', { class: 'small ghost', title: f.description || '', onclick: () => { noteInput.value = (noteInput.value + ' ' + f.key + '=').trimStart(); noteInput.focus(); } }, f.key))),
@@ -577,44 +641,138 @@ function dial(value, f) {
   return svg;
 }
 
-function verdictOf(key) {
-  const c = S.capture && S.capture.confirms.filter((x) => x.field === key).pop();
-  if (!c) return h('span', { class: 'muted' }, 'not checked yet');
-  return c.ok ? h('span', { class: 'good' }, `✓ matches the display (${c.shown})`) : h('span', { class: 'bad' }, `✗ display showed ${c.console}, this showed ${c.shown}`);
+// What the standard Bluetooth profiles can carry, described like registry fields so one tile draws both.
+const STANDARD = {
+  FTMS: { title: 'FTMS (the standard for trainers and bikes)', keys: ['power', 'cadence', 'speed', 'heartRate', 'resistance'] },
+  CPS: { title: 'Cycling Power (standard)', keys: ['power', 'cadence', 'speed'] },
+  CSC: { title: 'Speed and Cadence (standard)', keys: ['cadence', 'speed'] },
+  HR: { title: 'Heart Rate (standard)', keys: ['heartRate'] },
+};
+const STANDARD_FIELDS = {
+  power: { name: 'Power', unit: 'W', decimals: 0, min: 0, max: 2000 },
+  cadence: { name: 'Cadence', unit: 'rpm', decimals: 0, min: 0, max: 200 },
+  speed: { name: 'Speed', unit: 'km/h', decimals: 1, min: 0, max: 100 },
+  heartRate: { name: 'Heart rate', unit: 'bpm', decimals: 0, min: 0, max: 220 },
+  resistance: { name: 'Resistance', unit: '', decimals: 0, min: 0, max: 200 },
+};
+
+/** Everything being decoded right now, grouped by what decodes it: [{ id, title, hint, tiles: [{ id, proto, key, f, value }] }] */
+function liveGroups() {
+  const groups = [];
+  const src = S.live.source;
+  if (src) {
+    groups.push({
+      id: 'ofp', title: src.name, hint: `OFP table “${src.table}” (version ${src.table_version})`,
+      tiles: src.fields.map((f) => ({ id: 'ofp:' + f.key, proto: 'ofp', key: f.key, f, value: S.live.values[f.key], stale: S.live.stale })),
+    });
+  }
+  const T = Tester.state();
+  const now = testerNow();
+  for (const [proto, def] of Object.entries(STANDARD)) {
+    const v = T.src[proto];
+    if (v.at === undefined) continue;
+    const tiles = def.keys.filter((k) => v[k] !== undefined).map((k) => ({ id: proto + ':' + k, proto, key: k, f: { key: proto + '-' + k, ...STANDARD_FIELDS[k] }, value: v[k], stale: now - v.at > 4000 }));
+    if (tiles.length) groups.push({ id: proto, title: def.title, hint: 'read by the standard, no table needed', tiles });
+  }
+  return groups;
+}
+
+/** The rider's latest word on a value: { ok, text } or null. */
+function verdictOf(tile) {
+  if (!S.capture) return null;
+  if (tile.proto === 'ofp') {
+    const c = S.capture.confirms.filter((x) => x.field === tile.key).pop();
+    if (!c) return null;
+    return c.ok ? { ok: true, text: 'you said this is right' } : { ok: false, text: 'you said this is wrong' + (c.console != null ? ` (display showed ${c.console})` : '') };
+  }
+  const tag = `${tile.proto} ${tile.key}`;
+  const n = S.capture.notes.filter((x) => x.text.startsWith('RIGHT: ' + tag) || x.text.startsWith('PROBLEM: ' + tag)).pop();
+  if (!n) return null;
+  return n.text.startsWith('RIGHT') ? { ok: true, text: 'you said this is right' } : { ok: false, text: 'you said this is wrong' };
+}
+
+const sayRight = guard(async (tile) => {
+  if (tile.proto === 'ofp') await api('/api/confirm', { field: tile.key });
+  else await api('/api/note', { text: `RIGHT: ${tile.proto} ${tile.key} (showed ${fmt(tile.value, tile.f)})` });
+  toast(`${tile.f.name}: right`);
+});
+
+/** "No, this is wrong": one optional line in the rider's own words. A plain number is taken as what the display showed. */
+function sayWrong(tile) {
+  const dlg = $('#dialog');
+  const shown = fmt(tile.value, tile.f);
+  const what = h('input', { style: 'width:100%', placeholder: 'e.g. the console shows about 70 · it jumps around · it is double' });
+  const save = guard(async () => {
+    const text = what.value.trim();
+    const number = text !== '' && !isNaN(Number(text)) ? Number(text) : undefined;
+    if (tile.proto === 'ofp') {
+      await api('/api/confirm', { field: tile.key, wrong: true, console: number });
+      if (text && number === undefined) await api('/api/note', { text: `PROBLEM: ${tile.f.name}: ${text} (showed ${shown})` });
+    } else {
+      await api('/api/note', { text: `PROBLEM: ${tile.proto} ${tile.key}: ${text || 'wrong'} (showed ${shown})` });
+    }
+    dlg.close();
+    toast('Saved. Tell your assistant: it can see what the device sent at that moment.');
+  });
+  what.addEventListener('keydown', (e) => { if (e.key === 'Enter') save(); });
+  dlg.replaceChildren(
+    h('h2', { style: 'margin-top:0' }, `${tile.f.name} is wrong`),
+    h('p', { class: 'hint' }, `It showed ${shown} ${tile.f.unit || ''} when you pressed. If you can, say what you saw on the device, in your own words. You can leave this empty.`),
+    what,
+    h('div', { class: 'row', style: 'margin-top:14px; justify-content:flex-end' }, h('button', { class: 'ghost', onclick: () => dlg.close() }, 'Cancel'), h('button', { class: 'danger', onclick: save }, 'Save “wrong”')));
+  dlg.showModal();
+  what.focus();
 }
 
 function renderTiles() {
   const box = $('#tiles');
   if (!box) return;
-  const src = S.live.source;
-  if (!src) { box.replaceChildren(h('div', { class: 'empty' }, 'Waiting for the device… (wake it: pedal or press a button)')); return; }
-  // rebuild only when the set of fields changes, so typing in a box is never interrupted
-  const sig = src.fields.map((f) => f.key + displayMode(f.key)).join('|');
+  const groups = liveGroups();
+  if (!groups.length) {
+    const s = session();
+    box.dataset.sig = '';
+    box.replaceChildren(h('div', { class: 'empty' }, s && s.recording ? 'Waiting for the device… (wake it: pedal or press a button)' : 'Press Start to see the values.'));
+    return;
+  }
+  // rebuild only when the set of values changes, so nothing jumps while you look or click
+  const sig = groups.map((g) => g.id + '=' + g.tiles.map((t) => t.id + displayMode(t.f.key)).join(',')).join('|');
   if (box.dataset.sig !== sig) {
     box.dataset.sig = sig;
-    box.replaceChildren(...src.fields.map((f) => {
-      const input = h('input', { type: 'number', step: 'any', placeholder: 'display shows…', style: 'width:130px' });
-      const confirm = guard(async (console_) => { await api('/api/confirm', { field: f.key, console: console_ }); input.value = ''; });
-      return h('div', { class: 'tile', 'data-key': f.key },
-        h('div', { class: 'name' }, h('span', {}, f.name, f.unit ? h('span', { class: 'unit' }, ' ' + f.unit) : null),
-          h('select', { class: 'small', onchange: (e) => setDisplayMode(f.key, e.target.value) },
-            [['number', 'Big number'], ['dial', 'Dial'], ['text', 'Text']].map(([v, l]) => h('option', { value: v, selected: displayMode(f.key) === v }, l)))),
+    box.replaceChildren(...groups.map((g) => h('div', { class: 'group' },
+      h('div', { class: 'group-head' }, h('b', {}, g.title), h('span', { class: 'muted' }, ' · ' + g.hint)),
+      h('div', { class: 'tiles' }, g.tiles.map((t) => h('div', { class: 'tile', 'data-id': t.id },
+        h('div', { class: 'name' }, h('span', {}, t.f.name, t.f.unit ? h('span', { class: 'unit' }, ' ' + t.f.unit) : null),
+          h('select', { class: 'small', onchange: (e) => setDisplayMode(t.f.key, e.target.value) },
+            [['number', 'Big number'], ['dial', 'Dial'], ['text', 'Text']].map(([v, l]) => h('option', { value: v, selected: displayMode(t.f.key) === v }, l)))),
         h('div', { class: 'show' }),
         h('div', { class: 'verdict' }),
-        h('div', { class: 'row' }, h('button', { class: 'small', onclick: () => confirm(undefined) }, 'Matches the display'), input,
-          h('button', { class: 'small', onclick: () => { if (input.value !== '') confirm(Number(input.value)); } }, 'Save')));
-    }));
+        h('div', { class: 'row' },
+          h('button', { class: 'small yes', onclick: () => sayRight(currentTile(t.id)) }, 'Yes, this is right'),
+          h('button', { class: 'small no', onclick: () => sayWrong(currentTile(t.id)) }, 'No, this is wrong'))))))));
   }
-  for (const tile of box.children) {
-    const f = src.fields.find((x) => x.key === tile.dataset.key);
-    const v = S.live.values[f.key];
-    const mode = displayMode(f.key);
-    tile.classList.toggle('silent', S.live.stale);
+  for (const g of groups) for (const t of g.tiles) {
+    const tile = box.querySelector(`.tile[data-id="${t.id}"]`);
+    if (!tile) continue;
+    const mode = displayMode(t.f.key);
+    tile.classList.toggle('silent', !!t.stale);
     const show = tile.querySelector('.show');
-    if (mode === 'dial') show.replaceChildren(dial(v, f));
-    else show.replaceChildren(h('div', { class: 'value' + (mode === 'text' ? ' text' : '') }, fmt(v, f) + (mode === 'text' && f.unit ? ' ' + f.unit : '')));
-    tile.querySelector('.verdict').replaceChildren(verdictOf(f.key));
+    if (mode === 'dial') show.replaceChildren(dial(t.value, t.f));
+    else {
+      const text = fmt(t.value, t.f) + (mode === 'text' && t.f.unit ? ' ' + t.f.unit : '');
+      if (!show.firstChild || show.firstChild.className !== 'value' + (mode === 'text' ? ' text' : '')) show.replaceChildren(h('div', { class: 'value' + (mode === 'text' ? ' text' : '') }, text));
+      else if (show.firstChild.textContent !== text) show.firstChild.textContent = text;
+    }
+    const v = verdictOf(t);
+    const el = tile.querySelector('.verdict');
+    const text = v ? (v.ok ? '✓ ' : '✗ ') + v.text : 'not checked yet';
+    if (el.textContent !== text) { el.textContent = text; el.className = 'verdict ' + (v ? (v.ok ? 'good' : 'bad') : 'muted'); }
   }
+}
+
+/** The tile as it is at the moment of the click (the value keeps moving). */
+function currentTile(id) {
+  for (const g of liveGroups()) for (const t of g.tiles) if (t.id === id) return t;
+  return null;
 }
 
 function viewLive() {
@@ -622,14 +780,29 @@ function viewLive() {
   if (!s) return needSession('Choose a device first.');
   const wrap = h('div', {});
   const head = h('div', { class: 'panel' },
-    h('h2', {}, S.live.source ? S.live.source.name : 'Live values'),
-    h('p', { class: 'hint' }, s.draft ? 'Decoded with the table you are writing.' : 'Decoded with the registry’s table for this device (no table of your own yet).',
-      ' Compare each number with the device’s own display: “Matches”, or type what the display shows. Your answers are saved in the capture and the checks hold the table to them.'));
+    h('h2', {}, 'Live: ' + s.name),
+    h('p', { class: 'hint' }, 'What the device is sending right now, grouped by what reads it. Use the device normally and look at its own display: for each value, is this right? You do not need to match an exact number, they move. ',
+      'If something is wrong, say so here and then tell your assistant what you saw.'));
   if (s.from_file) head.append(h('p', { class: 'problem' }, 'This is a capture file. Live values need the device: choose it in Devices.'));
-  else if (!s.recording) head.append(h('button', { class: 'primary', onclick: guard(async () => { await api('/api/record/start', {}); await loadState(); render(); }) }, 'Start (records while you confirm)'));
-  else head.append(h('div', { class: 'row' }, h('span', { class: 'dot rec' }), h('span', {}, 'Recording'), h('button', { class: 'small', onclick: guard(async () => { await api('/api/record/stop', {}); await reload(); }) }, 'Stop'),
+  else if (!s.recording) head.append(h('button', { class: 'primary', onclick: guard(async () => { await api('/api/record/start', {}); await loadState(); render(); }) }, 'Start'));
+  else head.append(h('div', { class: 'row' }, h('span', { class: 'dot rec' }), h('span', {}, 'Recording what the device sends'), h('button', { class: 'small', onclick: guard(async () => { await api('/api/record/stop', {}); await reload(); }) }, 'Stop'),
     h('button', { class: 'small ghost', onclick: () => setTab('save') }, 'Check and save →')));
-  wrap.append(head, h('div', { class: 'tiles', id: 'tiles' }));
+  if (S.capture && S.capture.packets.length) {
+    head.append(h('div', { class: 'row', style: 'margin-top:12px' },
+      h('a', { class: 'btn', href: '/api/capture/file', download: '' }, 'Download the recording'),
+      h('span', { class: 'muted' }, 'One file with everything the device sent and what you answered. Send it to whoever is helping you: they open it in their own Studio.')));
+  }
+
+  // Anything else that looks wrong, in the rider's own words: saved with the time, next to what the device sent.
+  const problem = h('input', { class: 'fill', placeholder: 'everything freezes for a few seconds now and then · …', onkeydown: (e) => { if (e.key === 'Enter') tell(); } });
+  const tell = guard(async () => { if (!problem.value.trim()) return; await api('/api/note', { text: 'PROBLEM: ' + problem.value }); problem.value = ''; toast('Saved with the time.'); });
+  const told = (S.capture ? S.capture.notes : []).filter((n) => n.text.startsWith('PROBLEM:')).slice(-5).reverse();
+  wrap.append(head, h('div', { id: 'tiles' }),
+    h('div', { class: 'panel', style: 'margin-top:16px' },
+      h('h2', {}, 'Anything else?'),
+      h('p', { class: 'hint' }, 'Something that is not about one value. Saved in the recording with the time.'),
+      h('div', { class: 'row' }, problem, h('button', { onclick: tell, disabled: !s.recording }, 'Save')),
+      h('ul', { class: 'list' }, told.map((n) => h('li', {}, h('span', { class: 'muted mono' }, secs(n.t)), h('span', {}, n.text.slice(9)))))));
   setTimeout(renderTiles);
   return wrap;
 }

@@ -289,6 +289,9 @@ Ways to help, from easiest to hardest:
 
 ### Try it
 
+The quickest way to see it: `npm start` (or `cargo run --release -p ofp-cli -- studio`). It builds
+the tool the first time and opens the Studio in your browser.
+
 You need [Rust](https://rustup.rs). The Bluetooth commands are tested on macOS so far; the library
 they use also supports Windows and Linux.
 

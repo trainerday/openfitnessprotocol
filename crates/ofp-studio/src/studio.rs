@@ -293,8 +293,10 @@ impl Studio {
                 })
             })
             .collect();
+        // A steady order, so rows do not jump as signal strengths change: devices the registry knows,
+        // then named ones by name, then the nameless. (A map keyed by device id is already steady.)
         rows.sort_by(|a, b| {
-            let key = |v: &Value| (v["known"].is_null(), v["name"].is_null(), -(v["rssi"].as_i64().unwrap_or(-200)));
+            let key = |v: &Value| (v["known"].is_null(), v["name"].is_null(), v["name"].as_str().unwrap_or("").to_lowercase(), v["device_id"].as_str().unwrap_or("").to_string());
             key(a).cmp(&key(b))
         });
         json!(rows)
@@ -503,6 +505,28 @@ impl Studio {
             "confirms": confirms,
             "io": io,
         }))
+    }
+
+    /// The recording as a file to send to someone: (file name, text).
+    pub fn capture_file(&self) -> Result<(String, String), String> {
+        let st = self.state.lock().unwrap();
+        let s = st.session.as_ref().ok_or("Choose a device or open a capture first.")?;
+        let mut text = Vec::new();
+        for l in &s.lines {
+            write_line(&mut text, l).map_err(|e| e.to_string())?;
+        }
+        let name = s.path.as_ref().and_then(|p| p.file_name()).and_then(|n| n.to_str()).map(String::from).unwrap_or_else(|| format!("{}.capture.jsonl", ofp_capture::file_stem_for(&s.name)));
+        Ok((name, String::from_utf8_lossy(&text).into_owned()))
+    }
+
+    /// A recording someone sent: checked, kept in the captures folder, and opened.
+    pub fn open_uploaded(&self, name: &str, text: &str) -> Reply {
+        ofp_capture::read(text.as_bytes()).map_err(|e| format!("That is not an OFP recording: {e}"))?;
+        std::fs::create_dir_all(&self.cfg.captures).map_err(|e| e.to_string())?;
+        let stem = ofp_capture::file_stem_for(name.trim_end_matches(".jsonl").trim_end_matches(".capture"));
+        let path = self.cfg.captures.join(format!("{stem}-received-{}.capture.jsonl", stamp()));
+        std::fs::write(&path, text).map_err(|e| format!("{}: {e}", path.display()))?;
+        self.open_capture(&path)
     }
 
     // ───────────── finding the bytes ─────────────
@@ -738,7 +762,9 @@ impl Studio {
         Ok(json!({ "key": key, "id": id, "file": path.display().to_string() }))
     }
 
-    pub fn confirm(&self, field: &str, console: Option<f64>) -> Reply {
+    /// The rider's verdict on a value being shown: right, or wrong (`wrong`, with what the device's own
+    /// display showed when they know it).
+    pub fn confirm(&self, field: &str, console: Option<f64>, wrong: bool) -> Reply {
         let mut st = self.state.lock().unwrap();
         let s = st.session.as_mut().ok_or("Choose a device first.")?;
         if !s.recording {
@@ -746,7 +772,7 @@ impl Studio {
         }
         let shown = *s.live_values.get(field).ok_or_else(|| format!("No value for '{field}' has been decoded yet."))?;
         let source_id = s.live_source_id.clone().unwrap_or_default();
-        let ok = console.is_none_or(|c| (c - shown).abs() < 1e-9);
+        let ok = !wrong && console.is_none_or(|c| (c - shown).abs() < 1e-9);
         let line = Line::Confirm { t: s.now(), source_id, field: field.to_string(), shown, console: if ok { None } else { console }, ok };
         let v = serde_json::to_value(&line).map_err(|e| e.to_string())?;
         s.append(line)?;
@@ -1146,9 +1172,9 @@ mod tests {
         assert_eq!(st["session"]["live"]["source"]["source_id"], "keiser-m3i:197");
         assert_eq!(st["session"]["live"]["values"]["power"], 152.0);
         // confirmations: one right, one wrong
-        assert_eq!(s.confirm("power", None).unwrap()["ok"], true);
-        assert_eq!(s.confirm("gear", Some(12.0)).unwrap()["ok"], false);
-        assert!(s.confirm("heart_rate", None).is_err());
+        assert_eq!(s.confirm("power", None, false).unwrap()["ok"], true);
+        assert_eq!(s.confirm("gear", Some(12.0), false).unwrap()["ok"], false);
+        assert!(s.confirm("heart_rate", None, false).is_err());
         assert!(s.save("x", false).is_err(), "not while recording");
         s.record_stop().unwrap();
         // the capture holds only the chosen device, the note and both confirmations

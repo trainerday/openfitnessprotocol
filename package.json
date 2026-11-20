@@ -1,0 +1,11 @@
+{
+  "name": "openfitnessprotocol",
+  "private": true,
+  "description": "Shortcuts. The project is Rust (cargo); these only save typing.",
+  "scripts": {
+    "start": "cargo run --release -p ofp-cli -- studio",
+    "check": "cargo run --release -p ofp-cli --no-default-features -- check",
+    "test": "cargo test --workspace && node --test packages/ofp-js/test/ofp.test.js && node --test examples/test/examples.test.js",
+    "build": "scripts/build.sh"
+  }
+}

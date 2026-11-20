@@ -85,6 +85,12 @@ struct YamlReq {
 }
 
 #[derive(Deserialize)]
+struct UploadReq {
+    name: String,
+    text: String,
+}
+
+#[derive(Deserialize)]
 struct WriteReq {
     chr: String,
     hex: String,
@@ -97,6 +103,9 @@ struct ConfirmReq {
     field: String,
     #[serde(default)]
     console: Option<f64>,
+    /// "No, this is wrong" (with or without what the display showed)
+    #[serde(default)]
+    wrong: bool,
 }
 
 async fn events(State(app): State<App>) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
@@ -120,6 +129,16 @@ pub fn router(studio: Arc<Studio>, radio: mpsc::UnboundedSender<Radio>, has_radi
         .route("/api/state", get(|State(a): State<App>| async move { Json(a.studio.state_json()) }))
         .route("/api/devices", get(|State(a): State<App>| async move { Json(a.studio.devices_json()) }))
         .route("/api/captures", get(|State(a): State<App>| async move { Json(a.studio.captures_json()) }))
+        .route(
+            "/api/capture/file",
+            get(|State(a): State<App>| async move {
+                match a.studio.capture_file() {
+                    Ok((name, text)) => ([(header::CONTENT_TYPE, "application/x-ndjson".to_string()), (header::CONTENT_DISPOSITION, format!("attachment; filename=\"{name}\""))], text).into_response(),
+                    Err(e) => reply(Err(e)),
+                }
+            }),
+        )
+        .route("/api/capture/upload", post(|State(a): State<App>, Json(r): Json<UploadReq>| async move { reply(a.studio.open_uploaded(&r.name, &r.text)) }))
         .route("/api/capture", get(|State(a): State<App>| async move { reply(a.studio.capture_json()) }))
         .route(
             "/api/session",
@@ -160,7 +179,7 @@ pub fn router(studio: Arc<Studio>, radio: mpsc::UnboundedSender<Radio>, has_radi
         .route("/api/table/design", post(|State(a): State<App>, Json(r): Json<ProposeReq>| async move { reply(a.studio.set_design(r)) }))
         .route("/api/table/check", post(|State(a): State<App>, Json(r): Json<YamlReq>| async move { reply(a.studio.check_table(&r.yaml)) }))
         .route("/api/field", post(|State(a): State<App>, Json(r): Json<FieldReq>| async move { reply(a.studio.add_field(r)) }))
-        .route("/api/confirm", post(|State(a): State<App>, Json(r): Json<ConfirmReq>| async move { reply(a.studio.confirm(&r.field, r.console)) }))
+        .route("/api/confirm", post(|State(a): State<App>, Json(r): Json<ConfirmReq>| async move { reply(a.studio.confirm(&r.field, r.console, r.wrong)) }))
         .route(
             "/api/write",
             post(|State(a): State<App>, Json(r): Json<WriteReq>| async move {
@@ -171,6 +190,7 @@ pub fn router(studio: Arc<Studio>, radio: mpsc::UnboundedSender<Radio>, has_radi
             }),
         )
         .route("/api/save", post(|State(a): State<App>, Json(r): Json<YamlReq>| async move { reply(a.studio.save(&r.yaml, r.overwrite)) }))
+        .layer(axum::extract::DefaultBodyLimit::max(64 * 1024 * 1024))
         .with_state(app)
 }
 
