@@ -354,6 +354,20 @@ pub async fn start(options: Options) -> Result<Running, String> {
             }
         });
     }
+    {
+        // a device whose table writes fixed start and poll frames: sent through the radio as they come due
+        let studio = studio.clone();
+        let tx = tx.clone();
+        tokio::spawn(async move {
+            let mut every = tokio::time::interval(Duration::from_millis(200));
+            loop {
+                every.tick().await;
+                for (chr, bytes, with_response) in studio.poll_tick() {
+                    let _ = tx.send(Radio::Write(chr, bytes, Some(with_response)));
+                }
+            }
+        });
+    }
     let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
     let app = router(studio, tx, has_radio);
     let served = tokio::spawn(async move {

@@ -161,6 +161,13 @@ export function selfTest(engine, bundle, rounds = 300) {
   }
 }
 
+/** One write the core asks for, as the app's Bluetooth wants it. */
+function toWrite(w) {
+  const bytes = new Uint8Array((w.data.length / 2) | 0);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(w.data.substr(i * 2, 2), 16);
+  return { service: w.service, characteristic: w.characteristic, bytes, withResponse: !!w.with_response };
+}
+
 export class Ofp {
   /**
    * @param {object} o
@@ -216,13 +223,23 @@ export class Ofp {
     }
   }
 
+  /** Polls are due as often as every 200 ms: a device that is polled needs tick() that often. */
+  get tickNeedMs() {
+    return 200;
+  }
+
   _deliver(messages) {
     for (const m of messages) {
       switch (m.type) {
         // A device that is connected to: the app's Bluetooth makes the connection and passes the
         // notifications in (see `connected`, `notification`, `disconnected`).
         case 'connect':
-          this.on.connect && this.on.connect({ id: m.source_id, deviceId: m.device_id, subscribe: m.subscribe });
+          // `start`: fixed bytes to write once, in order, right after subscribing (most devices: none)
+          this.on.connect && this.on.connect({ id: m.source_id, deviceId: m.device_id, subscribe: m.subscribe, start: (m.start || []).map(toWrite) });
+          break;
+        // A device that answers only when asked: write these fixed bytes now (a table's `poll`).
+        case 'write':
+          this.on.write && this.on.write({ id: m.source_id, deviceId: m.device_id, ...toWrite(m.write) });
           break;
         case 'disconnect':
           this.on.disconnect && this.on.disconnect({ id: m.source_id, deviceId: m.device_id });

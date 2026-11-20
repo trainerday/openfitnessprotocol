@@ -561,6 +561,22 @@ mod tests {
     }
 
     #[test]
+    fn a_table_that_writes_to_a_control_point_is_refused() {
+        let base = "id: x\nname: X\nreader: notify\nversion: 1\nstatus: draft\nprovenance: test\nverified_on: [test]\nmatch:\n  - name_prefix: X\nnotify:\n  service: fff0\n  characteristic: fff4\nstale_after_ms: 5000\nfields:\n  power: u8[0]\n";
+        let dir = altered("writes", "tables/keiser-m3i.yaml", "reader: broadcast", "reader: broadcast");
+        for (extra, ok) in [
+            ("start:\n  service: fff0\n  characteristic: fff1\n  frames: [\"f0 a0 01\"]\npoll:\n  service: fff0\n  characteristic: fff1\n  frames: [\"f0 a1\", \"f0 a2\"]\n  every_ms: 500\n", true),
+            ("start:\n  service: \"1826\"\n  characteristic: 2ad9\n  frames: [\"00\"]\n", false),
+            ("poll:\n  service: fff0\n  characteristic: fff1\n  frames: [\"f0\"]\n  every_ms: 50\n", false),
+            ("start:\n  service: fff0\n  characteristic: fff1\n  frames: [\"not hex\"]\n", false),
+        ] {
+            std::fs::write(dir.join("tables/x.yaml"), format!("{base}{extra}")).unwrap();
+            let errors = run(&dir, false).errors;
+            assert_eq!(errors.is_empty(), ok, "{extra}: {errors:?}");
+        }
+    }
+
+    #[test]
     fn the_tymewear_draft_decodes_a_breath_and_skips_the_other_packets() {
         let reg = registry::load(&registry_dir()).unwrap();
         // a breath: inhale 1.50 s, exhale 2.50 s, raw tidal volume 180 → 15 breaths/min, 1.80 L, 27 L/min

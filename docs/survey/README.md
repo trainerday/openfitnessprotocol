@@ -19,6 +19,14 @@ of it comes into OFP. So every device learned from them goes through two separat
 The table's `provenance` names its spec. Formulas another project made up (for example a power estimate
 from cadence and resistance) are that project's model, not a fact about the device, and are not taken.
 
+## How much we take from other projects
+
+Facts are free to learn, but the people behind QZ and GoldenCheetah did the work of finding them. So OFP
+takes **a few, very popular devices** from them, written down as specs the clean-room way, credited in
+every spec and table. Everything else comes **from owners**: someone with a device records it in OFP
+Studio and sends it (or writes the table), which is original work and the way OFP is meant to grow.
+(Decided by the project owner, 2026-11-20.)
+
 ## How these were made (2026-11-20)
 
 | Survey | Spec-writing session | Tables written from it |

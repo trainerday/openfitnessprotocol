@@ -25,11 +25,21 @@ export interface OfpDevice {
 }
 
 /** What the app's Bluetooth has to do for a connectable device. */
+/** Fixed bytes to write to the device (from its table: never computed, never to a control point). */
+export interface OfpWrite {
+  service: string
+  characteristic: string
+  bytes: Uint8Array
+  withResponse: boolean
+}
+
 export interface OfpConnectRequest {
   id: string
   /** The app's own id for the device (what it passed as `deviceId` in the advertisement). */
   deviceId: string
   subscribe: Array<{ service: string; characteristic: string }>
+  /** Write these once, in order, right after subscribing. Empty for most devices. */
+  start: OfpWrite[]
 }
 
 export interface OfpBasic {
@@ -76,6 +86,8 @@ export interface OfpOptions {
     silent?: (id: string) => void
     /** Connect to the device and subscribe to these characteristics; then call `connected` and pass their notifications to `notification`. */
     connect?: (request: OfpConnectRequest) => void
+    /** A device that answers only when asked: write these fixed bytes now. Needs tick() every 200 ms or so. */
+    write?: (request: OfpWrite & { id: string; deviceId: string }) => void
     /** The device is no longer in use: the connection is not needed for it. */
     disconnect?: (request: { id: string; deviceId: string }) => void
     /** Once a minute for a device in use: how well the radio hears it. */

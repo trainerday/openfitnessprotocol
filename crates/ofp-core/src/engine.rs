@@ -1,6 +1,6 @@
 //! The broadcast reader and the table engine.
 
-use crate::bundle::{Bundle, FieldDef, FieldType, MatchRule, RateSpec, SampleKind, Table, Tier, MAX_LAYOUT_PARTS};
+use crate::bundle::{Bundle, FieldDef, FieldType, MatchRule, RateSpec, SampleKind, Table, Tier, CONTROL_POINTS, MAX_FRAME_BYTES, MAX_LAYOUT_PARTS, MAX_WRITE_FRAMES, MIN_POLL_MS};
 use crate::expr::{Cx, Expr, PartType};
 use crate::BUNDLE_VERSION;
 use alloc::collections::BTreeMap;
@@ -83,7 +83,16 @@ pub enum Message {
     /// For the host: connect to this device and subscribe to these characteristics, then pass
     /// their notifications in. Sent when a connectable source comes into use, and again while it
     /// is in use and not connected.
-    Connect { source_id: String, device_id: String, subscribe: Vec<Subscription> },
+    Connect {
+        source_id: String,
+        device_id: String,
+        subscribe: Vec<Subscription>,
+        /// Written once, in order, after subscribing (the table's `start`). Empty for most devices.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        start: Vec<Write>,
+    },
+    /// For the host: write these fixed bytes to the connected device (a table's `poll`).
+    Write { source_id: String, device_id: String, write: Write },
     /// For the host: the source is no longer in use, the connection is not needed for it.
     Disconnect { source_id: String, device_id: String },
     Values {
@@ -139,6 +148,35 @@ struct Gatt {
     connected: bool,
     /// When the host was last asked to connect.
     asked_ms: Option<u64>,
+    /// The next poll frame, and when it is due.
+    poll_index: usize,
+    poll_due_ms: u64,
+}
+
+/// Fixed bytes for the host to write to one characteristic.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct Write {
+    pub service: String,
+    pub characteristic: String,
+    /// The bytes, as hex.
+    pub data: String,
+    pub with_response: bool,
+}
+
+fn hex(bytes: &[u8]) -> String {
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        s.push_str(&format!("{b:02x}"));
+    }
+    s
+}
+
+fn writes_of(w: &crate::bundle::Writes) -> Vec<Write> {
+    w.frames.iter().map(|f| Write { service: display_uuid(&w.service), characteristic: display_uuid(&w.characteristic), data: hex(f), with_response: w.with_response }).collect()
+}
+
+fn start_of(table: &Table) -> Vec<Write> {
+    table.start.as_ref().map(writes_of).unwrap_or_default()
 }
 
 /// Ask the host again to connect a source in use at most this often.
@@ -282,7 +320,7 @@ impl Core {
             if let Some(g) = &mut s.gatt {
                 if !g.connected {
                     g.asked_ms = Some(now_ms);
-                    out.push(Message::Connect { source_id: source_id.to_string(), device_id: g.device_id.clone(), subscribe: subscriptions(&self.bundle.tables[s.table]) });
+                    out.push(Message::Connect { source_id: source_id.to_string(), device_id: g.device_id.clone(), subscribe: subscriptions(&self.bundle.tables[s.table]), start: start_of(&self.bundle.tables[s.table]) });
                 }
             }
             if !s.stale && !s.values.is_empty() {
@@ -313,6 +351,11 @@ impl Core {
         for s in self.sources.values_mut() {
             if let Some(g) = &mut s.gatt {
                 if g.device_id == device_id {
+                    if !g.connected {
+                        // polls start right after connecting (the start frames are the host's, with Connect)
+                        g.poll_index = 0;
+                        g.poll_due_ms = _now_ms;
+                    }
                     g.connected = true;
                 }
             }
@@ -438,7 +481,7 @@ impl Core {
                         values: BTreeMap::new(),
                         emitted_ms: adv.now_ms,
                         rssi: adv.rssi,
-                        gatt: Some(Gatt { device_id: adv.device_id.to_string(), connected: false, asked_ms: None }),
+                        gatt: Some(Gatt { device_id: adv.device_id.to_string(), connected: false, asked_ms: None, poll_index: 0, poll_due_ms: 0 }),
                         rates: vec![RateState::default(); table.fields.len()],
                     },
                 );
@@ -457,7 +500,7 @@ impl Core {
             let Some(g) = &mut s.gatt else { continue };
             if s.in_use && !g.connected && g.asked_ms.is_none_or(|t| adv.now_ms.saturating_sub(t) >= CONNECT_RETRY_MS) {
                 g.asked_ms = Some(adv.now_ms);
-                out.push(Message::Connect { source_id: source_id.clone(), device_id: g.device_id.clone(), subscribe: subscriptions(table) });
+                out.push(Message::Connect { source_id: source_id.clone(), device_id: g.device_id.clone(), subscribe: subscriptions(table), start: start_of(table) });
             }
         }
     }
@@ -564,6 +607,19 @@ impl Core {
             if !s.in_use {
                 continue;
             }
+            // devices that answer only when asked: the next fixed frame, when it is due
+            if let (Some(poll), Some(g)) = (&table.poll, &mut s.gatt) {
+                if g.connected && !poll.frames.is_empty() && now_ms >= g.poll_due_ms {
+                    let frame = &poll.frames[g.poll_index % poll.frames.len()];
+                    out.push(Message::Write {
+                        source_id: id.clone(),
+                        device_id: g.device_id.clone(),
+                        write: Write { service: display_uuid(&poll.service), characteristic: display_uuid(&poll.characteristic), data: hex(frame), with_response: poll.with_response },
+                    });
+                    g.poll_index = (g.poll_index + 1) % poll.frames.len();
+                    g.poll_due_ms = now_ms + poll.every_ms;
+                }
+            }
             if s.stale {
                 if settings.lost_after_ms > 0 && silent_for >= settings.lost_after_ms {
                     s.in_use = false;
@@ -599,6 +655,22 @@ fn check_layout_and_rates(t: &Table) -> Result<(), String> {
         let (part, rate) = e.uses();
         e.within_limits() && part.is_none_or(|p| p < parts) && (rate_allowed || !rate)
     };
+    for (what, w) in [("start", &t.start), ("poll", &t.poll)] {
+        let Some(w) = w else { continue };
+        if t.reader != "notify" {
+            return Err(format!("table {}: {what} goes with reader: notify", t.id));
+        }
+        let chr = normalize_uuid(&w.characteristic);
+        if CONTROL_POINTS.iter().any(|c| normalize_uuid(c) == chr) {
+            return Err(format!("table {}: {what} writes to a control point ({chr}): that is control, which OFP does not do", t.id));
+        }
+        if w.frames.is_empty() || w.frames.len() > MAX_WRITE_FRAMES || w.frames.iter().any(|f| f.is_empty() || f.len() > MAX_FRAME_BYTES) {
+            return Err(format!("table {}: {what}: 1 to {MAX_WRITE_FRAMES} frames of 1 to {MAX_FRAME_BYTES} bytes", t.id));
+        }
+        if what == "poll" && w.every_ms < MIN_POLL_MS {
+            return Err(format!("table {}: poll every_ms must be at least {MIN_POLL_MS}", t.id));
+        }
+    }
     if let Some(l) = &t.layout {
         for p in &l.parts {
             // where a part sits cannot depend on other parts: flags are read at fixed positions
@@ -858,6 +930,8 @@ mod tests {
                 instance: Some(Instance { label: "bike".into(), value: Expr::U8(1) }),
                 stale_after_ms: 3000,
                 layout: None,
+            start: None,
+            poll: None,
                 fields: vec![
                     TableField { field: "power".into(), value: Expr::U16le(2), only_when: None, rate: None },
                     TableField { field: "energy".into(), value: Expr::U8(1), only_when: None, rate: None },
@@ -960,6 +1034,7 @@ mod tests {
                 Message::SourceLost { .. } => "lost",
                 Message::Connect { .. } => "connect",
                 Message::Disconnect { .. } => "disconnect",
+                Message::Write { .. } => "write",
             })
             .collect()
     }
@@ -1035,6 +1110,8 @@ mod tests {
             instance: None,
             stale_after_ms: 5000,
             layout: None,
+            start: None,
+            poll: None,
             fields: vec![TableField { field: "temp".into(), value: Expr::Bin(BinOp::Div, Box::new(Expr::I16le(1)), Box::new(Expr::Num(100.0))), only_when: None, rate: None }],
         });
         b
@@ -1072,6 +1149,50 @@ mod tests {
         assert!(core.on_notification("other", CHR, &[0, 0x8d, 0x0e], 22_800).is_empty());
         // out of the plausible range: not passed on
         assert!(matches!(&core.on_notification("dev9", CHR, &[0, 0x10, 0x27], 23_000)[0], Message::Values { out_of_range, .. } if out_of_range == &vec![String::from("temp")]));
+    }
+
+    /// A bike that sends only when asked: one start frame after subscribing, two poll frames in turn.
+    fn polled_bundle(poll_every: u64, chr: &str) -> Bundle {
+        let mut b = sensor_bundle();
+        let t = b.tables.last_mut().unwrap();
+        t.start = Some(crate::bundle::Writes { service: "fff0".into(), characteristic: chr.into(), frames: vec![vec![0xf0, 0xa0, 0x01]], with_response: false, every_ms: 0 });
+        t.poll = Some(crate::bundle::Writes { service: "fff0".into(), characteristic: chr.into(), frames: vec![vec![0xf0, 0xa1], vec![0xf0, 0xa2]], with_response: false, every_ms: poll_every });
+        b
+    }
+
+    #[test]
+    fn start_frames_come_with_connect_and_polls_only_while_connected_and_in_use() {
+        let mut core = Core::from_bundle(polled_bundle(500, "fff2")).unwrap();
+        let svc = vec![String::from("00002100-5b1e-4347-b07c-97b514dae121")];
+        core.on_advertisement(&sensor_adv(&svc, "CORE", 0));
+        // not in use: nothing is written
+        assert!(core.tick(1000).is_empty());
+        let m = core.use_source("sensor:dev9", 1000).unwrap();
+        assert!(matches!(&m[1], Message::Connect { start, .. } if start.len() == 1 && start[0].data == "f0a001" && start[0].characteristic == "fff2"));
+        // asked to connect, not connected yet: no polls
+        assert!(!kinds(&core.tick(1200)).contains(&"write"));
+        core.on_connected("dev9", 1500);
+        let polls = |m: Vec<Message>| m.into_iter().filter_map(|m| match m { Message::Write { write, .. } => Some(write.data), _ => None }).collect::<Vec<_>>();
+        assert_eq!(polls(core.tick(1500)), ["f0a1"]);
+        assert!(polls(core.tick(1800)).is_empty(), "every 500 ms");
+        assert_eq!(polls(core.tick(2000)), ["f0a2"]);
+        assert_eq!(polls(core.tick(2500)), ["f0a1"], "in turn");
+        core.release_source("sensor:dev9");
+        assert!(polls(core.tick(3500)).is_empty(), "released: no more");
+    }
+
+    #[test]
+    fn a_table_cannot_write_to_a_control_point_or_too_much_or_too_often() {
+        let msg = |b: Bundle| Core::from_bundle(b).err().unwrap_or_default();
+        assert!(msg(polled_bundle(500, "2AD9")).contains("control point"));
+        assert!(msg(polled_bundle(500, "a026e005-0a7d-4ab3-97fa-f1500f9feb8b")).contains("control point"));
+        assert!(msg(polled_bundle(100, "fff2")).contains("at least 200"));
+        let mut b = polled_bundle(500, "fff2");
+        b.tables.last_mut().unwrap().start.as_mut().unwrap().frames = vec![vec![1]; 17];
+        assert!(msg(b).contains("frames"));
+        let mut b = polled_bundle(500, "fff2");
+        b.tables.last_mut().unwrap().poll.as_mut().unwrap().frames = vec![vec![0; 65]];
+        assert!(msg(b).contains("frames"));
     }
 
     #[test]

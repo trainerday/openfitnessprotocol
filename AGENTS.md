@@ -115,7 +115,12 @@ for any device or any contributor (`SECURITY.md`, "The boundary"):
 - **No code**, in any form: no scripts, no expressions that call anything, no loops.
 - **Nothing outside the packet it was handed**: no files, no network, no other device, nothing about the
   rider, the app or the machine.
-- **Nothing sent to the device**: no commands, no writes, no handshake.
+- **Nothing sent to the device but declared fixed bytes**: a table may list frames to write so the device
+  starts sending (`start`, once after connecting) or answers (`poll`, repeated, at least 200 ms apart).
+  Exactly the bytes in the table, never computed or built from anything the device sends, never to a
+  control point (FTMS, Cycling Power, Speed and Cadence, Wahoo, Tacx, Elite), at most 16 frames of 64
+  bytes. **No locks**: nothing that answers a challenge, unlocks, pairs with a secret or decrypts. A device
+  that needs one stays out (decided 2026-11-20: Echelon, Kinetic and Peloton are not added).
 - **No unbounded work**: the arithmetic is capped in depth and size, a layout has at most 32 parts, and
   the check refuses a table that goes past the cap.
 - **Nothing kept but a counter**: a `rate` remembers the last count and event time of its own counter,

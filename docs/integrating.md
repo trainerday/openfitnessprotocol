@@ -56,6 +56,10 @@ example that matches this app's Bluetooth library (examples/…/ofpDevices.js), 
    list means OFP reads the standard sensors too (heart rate, power, speed and cadence, running,
    FTMS bikes, rowers and treadmills). A device with several services can be asked for by several
    sources: connect it once and subscribe to everything they ask for.
+   Some devices send only after the app writes fixed bytes their table declares: `connect` brings them as
+   `start` (write once, in order, after subscribing), and the `write` hook asks for a poll now and then
+   (call `tick()` about every 200 ms while such a device is in use). An app that does not wire `write`
+   still reads every other device.
 4. Find out when this app stops scanning, and keep the scan running while `ofp.scanNeed()` says so.
 5. Tell me what an OFP device has to look like for this app's device list and screens, before
    writing a stand-in for it.

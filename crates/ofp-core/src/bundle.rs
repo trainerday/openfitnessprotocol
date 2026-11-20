@@ -80,7 +80,44 @@ pub struct Table {
     /// the packet. Fields read a part with `Expr::Part`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub layout: Option<Layout>,
+    /// `reader: notify`: fixed bytes written once, in order, after subscribing, so the device starts
+    /// sending its data. Never computed, never to a control point (checked when the bundle loads).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start: Option<Writes>,
+    /// Fixed frames written in turn, every `every_ms`, while the device is in use: for devices that
+    /// answer only when asked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub poll: Option<Writes>,
     pub fields: Vec<TableField>,
+}
+
+/// At most this many frames in `start` or `poll`, each at most this long, and polls no closer than this.
+pub const MAX_WRITE_FRAMES: usize = 16;
+pub const MAX_FRAME_BYTES: usize = 64;
+pub const MIN_POLL_MS: u64 = 200;
+
+/// Characteristics a table may never write to: the control points of trainers and power meters.
+/// Writing there is control, which OFP does not do.
+pub const CONTROL_POINTS: [&str; 6] = [
+    "2ad9",                                 // FTMS control point
+    "2a66",                                 // Cycling Power control point
+    "2a55",                                 // Speed and Cadence control point
+    "a026e005-0a7d-4ab3-97fa-f1500f9feb8b", // Wahoo trainer control
+    "6e40fec3-b5a3-f393-e0a9-e50e24dcca9e", // Tacx FE-C over Bluetooth, write
+    "347b0012-7635-408b-8918-8ff3949ce592", // Elite trainer control
+];
+
+/// Fixed bytes to write to one characteristic.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Writes {
+    pub service: String,
+    pub characteristic: String,
+    pub frames: Vec<Vec<u8>>,
+    #[serde(default)]
+    pub with_response: bool,
+    /// `poll` only: how often a frame is written.
+    #[serde(default)]
+    pub every_ms: u64,
 }
 
 /// At most this many parts in a layout.

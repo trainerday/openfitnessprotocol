@@ -14,8 +14,8 @@ mod bundle;
 mod engine;
 mod expr;
 
-pub use bundle::{Bundle, FieldDef, FieldType, Instance, Layout, LayoutPart, MatchRule, NotifySpec, RateSpec, SampleKind, Table, TableField, Tier, MAX_LAYOUT_PARTS};
-pub use engine::{normalize_uuid, Advertisement, Core, FieldDescription, Message, Settings, Subscription};
+pub use bundle::{Bundle, FieldDef, FieldType, Instance, Layout, LayoutPart, MatchRule, NotifySpec, RateSpec, SampleKind, Table, TableField, Tier, Writes, CONTROL_POINTS, MAX_FRAME_BYTES, MAX_LAYOUT_PARTS, MAX_WRITE_FRAMES, MIN_POLL_MS};
+pub use engine::{normalize_uuid, Advertisement, Core, FieldDescription, Message, Settings, Subscription, Write};
 pub use expr::{BinOp, Cx, Expr, PartType, MAX_EXPR_DEPTH, MAX_EXPR_NODES};
 
 /// Version of the bundle format this core reads.

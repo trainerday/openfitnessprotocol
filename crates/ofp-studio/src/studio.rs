@@ -74,6 +74,9 @@ struct Session {
     live_source_id: Option<String>,
     /// Every source the live core offered for this device, by id (what `source` events describe).
     live_sources: BTreeMap<String, Value>,
+    /// Fixed bytes a table asks to write to the connected device (its `start`, then its `poll`), for the
+    /// radio to send: (characteristic, bytes, with response).
+    pending_writes: Vec<(String, Vec<u8>, bool)>,
 }
 
 impl Session {
@@ -353,6 +356,7 @@ impl Studio {
             live_values: BTreeMap::new(),
             live_source_id: None,
             live_sources: BTreeMap::new(),
+            pending_writes: Vec::new(),
         });
         let v = session_json(st.session.as_ref().unwrap());
         drop(st);
@@ -390,6 +394,7 @@ impl Studio {
             live_values: BTreeMap::new(),
             live_source_id: None,
             live_sources: BTreeMap::new(),
+            pending_writes: Vec::new(),
         });
         let v = session_json(st.session.as_ref().unwrap());
         drop(st);
@@ -1026,6 +1031,33 @@ impl Studio {
     }
 
     /// Once a second: silence is noticed here, and the device list goes out.
+    /// Often (every 200 ms): the polls a connected device's table asks for. The radio sends what this returns.
+    pub fn poll_tick(&self) -> Vec<(String, Vec<u8>, bool)> {
+        let mut out = Vec::new();
+        let writes = {
+            let mut st = self.state.lock().unwrap();
+            let Some(s) = st.session.as_mut() else { return Vec::new() };
+            if s.recording {
+                let t = s.now();
+                if let Some(core) = &mut s.live_core {
+                    let messages = core.tick(t);
+                    for m in &messages {
+                        if let Message::Write { write, .. } = m {
+                            let w = write_of(write);
+                            s.pending_writes.push(w);
+                        }
+                    }
+                    live_messages(s, messages, &mut out);
+                }
+            }
+            std::mem::take(&mut s.pending_writes)
+        };
+        for v in out {
+            self.emit(v);
+        }
+        writes
+    }
+
     pub fn tick(&self) {
         let mut out = Vec::new();
         {
@@ -1052,6 +1084,11 @@ impl Studio {
 /// The device id a connected session's device has inside the live core.
 const LIVE_DEVICE: &str = "live";
 
+fn write_of(w: &ofp_core::Write) -> (String, Vec<u8>, bool) {
+    let bytes = (0..w.data.len() / 2).filter_map(|i| u8::from_str_radix(&w.data[i * 2..i * 2 + 2], 16).ok()).collect();
+    (w.characteristic.clone(), bytes, w.with_response)
+}
+
 /// A connected session: tell the live core the device is there (its name and services), use every
 /// table that knows it, and say it is connected. From then on its notifications are decoded.
 fn prime_connected(s: &mut Session, out: &mut Vec<Value>) {
@@ -1064,14 +1101,23 @@ fn prime_connected(s: &mut Session, out: &mut Vec<Value>) {
         _ => (None, Vec::new()),
     };
     let t = s.now();
+    let mut s_writes = Vec::new();
     let Some(core) = &mut s.live_core else { return };
     let appeared = core.on_advertisement(&Advertisement { device_id: LIVE_DEVICE, name: name.as_deref(), rssi: None, manufacturer_data: &[], services: &services, now_ms: t });
     for m in &appeared {
         if let Message::SourceAppeared { source_id, connectable: true, .. } = m {
-            let _ = core.use_source(source_id, t);
+            // a table that must start the device's data: its fixed start frames, for the radio to write
+        for m in core.use_source(source_id, t).unwrap_or_default() {
+            if let Message::Connect { start, .. } = m {
+                for w in start {
+                    s_writes.push(write_of(&w));
+                }
+            }
+        }
         }
     }
     core.on_connected(LIVE_DEVICE, t);
+    s.pending_writes.extend(s_writes);
     live_messages(s, appeared, out);
 }
 
@@ -1318,6 +1364,32 @@ mod tests {
         for k in ["session", "draft", "recording", "packet", "source", "values", "note", "confirm", "checked"] {
             assert!(kinds.contains(k), "no '{k}' event in {kinds:?}");
         }
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_bike_that_needs_start_and_poll_frames_gets_them_written_after_connecting() {
+        use ofp_capture::{GattCharacteristic, GattService};
+        let (s, dir, _) = studio("polled", true);
+        let yaml = "id: polled-bike\nname: Polled bike\nreader: notify\nversion: 1\nstatus: draft\nprovenance: test\nverified_on: [test]\nmatch:\n  - name_prefix: POLLTEST\nnotify:\n  service: fff0\n  characteristic: fff4\nstart:\n  service: fff0\n  characteristic: fff1\n  frames: [\"f0 a0 01\"]\npoll:\n  service: fff0\n  characteristic: fff1\n  frames: [\"f0 a1\", \"f0 a2\"]\n  every_ms: 500\nstale_after_ms: 5000\nfields:\n  power: u8[2]\n";
+        std::fs::write(dir.join("registry/tables/polled-bike.yaml"), yaml).unwrap();
+        s.reload_known();
+        s.on_adv(AdvIn { device_id: "dev-p".into(), name: Some("POLLTEST 7".into()), rssi: Some(-50), ..Default::default() });
+        s.open_device("dev-p").unwrap();
+        s.record_start(None).unwrap();
+        // nothing to write before the connection
+        assert!(s.poll_tick().is_empty());
+        let chr = |u: &str| GattCharacteristic { uuid: u.into(), properties: vec!["notify".into(), "write".into()] };
+        s.on_connected(vec![GattService { uuid: "fff0".into(), characteristics: vec![chr("fff4"), chr("fff1")] }], vec![], vec!["fff4".into()]);
+        let w = s.poll_tick();
+        assert_eq!(w.first().map(|x| x.1.clone()), Some(vec![0xf0, 0xa0, 0x01]), "the start frame first: {w:?}");
+        assert!(w.iter().any(|x| x.1 == vec![0xf0, 0xa1]), "then the first poll: {w:?}");
+        assert!(w.iter().all(|x| x.0 == "fff1"));
+        // the bike answers, and its answer is read
+        s.on_notify("fff4", &[0, 0, 187]);
+        assert_eq!(s.state_json()["session"]["live"]["values"]["power"], 187.0);
+        s.record_stop().unwrap();
+        assert!(s.poll_tick().is_empty(), "stopped: no more polls");
         let _ = std::fs::remove_dir_all(dir);
     }
 

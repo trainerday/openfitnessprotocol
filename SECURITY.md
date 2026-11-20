@@ -31,8 +31,11 @@ This is what the design promises, and what a report should be measured against.
 
 **A table** is data. It can say which packets it matches and how bytes become fields: positions, masks,
 conditions, arithmetic. It cannot contain code. It cannot name a file, an address, a program or another
-device. It cannot send anything to a device. Its arithmetic is capped in depth and size, so it cannot
-make an app hang. The only state it keeps is the last count and time of a running counter (`rate`),
+device. The only thing it can send to a device is **fixed bytes it declares**, so the device starts
+sending its data: written once after connecting (`start`) or repeated at a fixed interval (`poll`, at
+least 200 ms apart), exactly as written in the table, never computed, never built from anything the
+device or the app says, never to a trainer's or power meter's control point, at most 16 frames of 64
+bytes each. Its arithmetic is capped in depth and size, so it cannot make an app hang. The only state it keeps is the last count and time of a running counter (`rate`),
 per source. The core that reads tables has no access to the system it runs on: it is built
 without the standard library and with unsafe code forbidden.
 

@@ -1,7 +1,7 @@
 //! Reads the registry (fields and tables as YAML) and compiles it into the bundle the core loads.
 
 use crate::exprparse;
-use ofp_core::{Bundle, Expr, FieldDef, FieldType, Instance, Layout, LayoutPart, MatchRule, NotifySpec, PartType, RateSpec, SampleKind, Table, TableField, Tier, BUNDLE_VERSION, MAX_LAYOUT_PARTS};
+use ofp_core::{Bundle, Expr, FieldDef, FieldType, Instance, Layout, LayoutPart, MatchRule, NotifySpec, PartType, RateSpec, SampleKind, Table, TableField, Tier, Writes, BUNDLE_VERSION, MAX_LAYOUT_PARTS};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -77,6 +77,28 @@ struct PartSrc {
     when: Option<String>,
 }
 
+/// `start:` / `poll:` — fixed bytes to write so the device sends its data.
+#[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+struct WritesSrc {
+    service: String,
+    characteristic: String,
+    /// Each frame as hex, spaces allowed ("f0 a0 01 92").
+    frames: Vec<String>,
+    #[serde(default)]
+    with_response: bool,
+    #[serde(default)]
+    every_ms: u64,
+}
+
+fn frame_bytes(hex: &str) -> Result<Vec<u8>, String> {
+    let h: String = hex.chars().filter(|c| !c.is_whitespace()).collect();
+    if h.is_empty() || h.len() % 2 != 0 || !h.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(format!("'{hex}' is not hex bytes"));
+    }
+    Ok((0..h.len()).step_by(2).map(|i| u8::from_str_radix(&h[i..i + 2], 16).unwrap_or(0)).collect())
+}
+
 /// `rate:` in a field — the speed of a running counter.
 #[derive(Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
@@ -134,6 +156,10 @@ struct TableSrc {
     stale_after_ms: u64,
     #[serde(default)]
     layout: Option<LayoutSrc>,
+    #[serde(default)]
+    start: Option<WritesSrc>,
+    #[serde(default)]
+    poll: Option<WritesSrc>,
     fields: serde_yaml_ng::Mapping,
 }
 
@@ -488,12 +514,30 @@ pub fn compile_table(text: &str, shown: &str, stem: Option<&str>, known: &BTreeS
             tfields.push(TableField { field: key.to_string(), value, only_when, rate });
         }
     }
+    let writes = |what: &str, w: &Option<WritesSrc>, errors: &mut Vec<String>| -> Option<Writes> {
+        let w = w.as_ref()?;
+        let mut frames = Vec::new();
+        for f in &w.frames {
+            match frame_bytes(f) {
+                Ok(b) => frames.push(b),
+                Err(e) => errors.push(format!("{shown}: {what}: {e}")),
+            }
+        }
+        if what == "poll" && w.every_ms == 0 {
+            errors.push(format!("{shown}: poll needs every_ms"));
+        }
+        Some(Writes { service: w.service.clone(), characteristic: w.characteristic.clone(), frames, with_response: w.with_response, every_ms: w.every_ms })
+    };
+    let start = writes("start", &t.start, errors);
+    let poll = writes("poll", &t.poll, errors);
     if errors.len() == before {
         let notify = t.notify.map(|n| NotifySpec { service: n.service, characteristic: n.characteristic, min_length: n.min_length });
         if t.status == "draft" {
             DRAFTS.with(|d| d.borrow_mut().insert(t.id.clone()));
         }
-        Some(Table { id: t.id, name: t.name, reader: t.reader, version: t.version, matches, notify, only_when, instance, stale_after_ms: t.stale_after_ms, layout, fields: tfields })
+        let table = Table { id: t.id, name: t.name, reader: t.reader, version: t.version, matches, notify, only_when, instance, stale_after_ms: t.stale_after_ms, layout, start, poll, fields: tfields };
+        // the limits (control points, sizes, intervals) are the core's: `ofp check` loads the bundle into it
+        Some(table)
     } else {
         None
     }
