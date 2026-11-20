@@ -287,8 +287,12 @@ the broadcast kind is wired in so far.
 | Heart rate straps (the Bluetooth Heart Rate standard) | heart rate |
 | Power meters (the Bluetooth Cycling Power standard) | power, cadence, speed |
 | Speed and cadence sensors (the Bluetooth standard) | speed, cadence |
-| Smart trainers and spin bikes speaking FTMS (Wahoo KICKR, Tacx, Elite, Saris, Schwinn IC4 / Bowflex C6, Stages, Wattbike, newer Yesoul and Domyos, and many more) | power, cadence, speed, distance, resistance, heart rate |
+| Spin bikes and indoor bikes with the Bluetooth fitness machine standard (FTMS): Schwinn IC4 / Bowflex C6, Stages, newer Yesoul and Domyos bikes, and many more | power, cadence, speed, distance, resistance, heart rate |
 | Keiser M3i indoor bike | power, cadence, heart rate, gear, energy, distance, time |
+
+**Smart trainers** (Wahoo KICKR, Tacx, Elite, Saris, Wattbike and others) are read too, power and cadence,
+but **read only**: OFP does not set their resistance or ERG mode. Your app keeps controlling them the way it
+does now, so there is usually little reason to read them through OFP.
 
 **Not verified yet** (written from published specifications or other projects' findings, waiting for an
 owner to check them in OFP Studio):

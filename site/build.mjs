@@ -153,7 +153,7 @@ function home(latest) {
         <li><b>Heart rate straps</b> (Bluetooth standard)</li>
         <li><b>Power meters</b>: power, cadence, speed</li>
         <li><b>Speed and cadence sensors</b></li>
-        <li><b>Smart trainers and spin bikes with FTMS</b>: Wahoo KICKR, Tacx, Elite, Saris, Schwinn IC4 / Bowflex C6, Stages, Wattbike, newer Yesoul and Domyos, and many more</li>
+        <li><b>Spin bikes and indoor bikes</b> with the Bluetooth fitness machine standard (FTMS): Schwinn IC4 / Bowflex C6, Stages, newer Yesoul and Domyos, and many more</li>
         <li><b>Keiser M3i</b> bike</li>
       </ul>
     </div>
@@ -169,6 +169,7 @@ function home(latest) {
       <p class="small">Own one? Connect it in OFP Studio, check the numbers, and send it. That is what verifies it.</p>
     </div>
   </div>
+  <p class="small"><b>Smart trainers</b> (Wahoo KICKR, Tacx, Elite, Saris, Wattbike and others) are read too, power and cadence, but <b>read only</b>: OFP does not set their resistance or ERG mode. Your app keeps controlling them the way it does now, so there is usually little reason to read them through OFP.</p>
   <p class="small">OFP is new: this is its first version, and things can still change before 1.0.</p>
 </section>
 `,
