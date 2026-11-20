@@ -3,3 +3,5 @@
 *.swp
 .DS_Store
 /captures
+/node_modules
+/crates/ofp-studio-app/gen

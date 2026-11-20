@@ -283,9 +283,13 @@ pub struct Options {
     pub port: u16,
     pub open: bool,
     pub capture: Option<PathBuf>,
+    /// When `port` is taken (another Studio is running), use any free port instead of failing.
+    /// The app with its own window does; the `ofp studio` command does not, so its address stays the same.
+    pub any_port: bool,
 }
 
-fn open_browser(url: &str) {
+/// Open an address in the computer's default browser.
+pub fn open_browser(url: &str) {
     let (cmd, args): (&str, Vec<&str>) = if cfg!(target_os = "macos") {
         ("/usr/bin/open", vec![url])
     } else if cfg!(target_os = "windows") {
@@ -296,12 +300,44 @@ fn open_browser(url: &str) {
     let _ = std::process::Command::new(cmd).args(args).spawn();
 }
 
-/// Run until Ctrl-C.
-pub async fn run(options: Options) -> Result<(), String> {
+/// A Studio that is being served. Dropping it does not stop it: call [`Running::stop`].
+pub struct Running {
+    /// Where the page is, e.g. `http://127.0.0.1:4747`
+    pub url: String,
+    pub port: u16,
+    stop: tokio::sync::oneshot::Sender<()>,
+    served: tokio::task::JoinHandle<Result<(), String>>,
+}
+
+impl Running {
+    /// Stop serving and wait until the server has ended.
+    pub async fn stop(self) -> Result<(), String> {
+        let _ = self.stop.send(());
+        self.served.await.map_err(|e| e.to_string())?
+    }
+
+    /// Wait until the server ends by itself (it does not, short of an error).
+    pub async fn wait(self) -> Result<(), String> {
+        let _keep = self.stop;
+        self.served.await.map_err(|e| e.to_string())?
+    }
+}
+
+/// Start the Studio: the radio, the clock and the page on 127.0.0.1. Must be called inside a tokio
+/// runtime; returns as soon as the page can be opened. Whoever calls decides what shows the page (the
+/// `ofp studio` command opens the browser, the app opens its own window) and when it stops.
+pub async fn start(options: Options) -> Result<Running, String> {
     let studio = Arc::new(Studio::new(options.config));
     if let Some(path) = &options.capture {
         studio.open_capture(path)?;
     }
+    // This computer only: the page can write into the registry folder.
+    let listener = match tokio::net::TcpListener::bind(("127.0.0.1", options.port)).await {
+        Ok(l) => l,
+        Err(_) if options.any_port => tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.map_err(|e| format!("no free port: {e}"))?,
+        Err(e) => return Err(format!("port {}: {e} (another `ofp studio` running? try --port)", options.port)),
+    };
+    let port = listener.local_addr().map_err(|e| e.to_string())?.port();
     let (tx, rx) = mpsc::unbounded_channel();
     let has_radio = cfg!(feature = "ble");
     #[cfg(feature = "ble")]
@@ -318,17 +354,68 @@ pub async fn run(options: Options) -> Result<(), String> {
             }
         });
     }
-    // This computer only: the page can write into the registry folder.
-    let listener = tokio::net::TcpListener::bind(("127.0.0.1", options.port)).await.map_err(|e| format!("port {}: {e} (another `ofp studio` running? try --port)", options.port))?;
-    let url = format!("http://127.0.0.1:{}", options.port);
-    println!("OFP Studio: {url}   (Ctrl-C to stop)");
-    if options.open {
-        open_browser(&url);
+    let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
+    let app = router(studio, tx, has_radio);
+    let served = tokio::spawn(async move {
+        axum::serve(listener, app)
+            .with_graceful_shutdown(async {
+                let _ = stopped.await;
+            })
+            .await
+            .map_err(|e| e.to_string())
+    });
+    Ok(Running { url: format!("http://127.0.0.1:{port}"), port, stop, served })
+}
+
+/// The `ofp studio` command: start, open the browser if asked, run until Ctrl-C.
+pub async fn run(options: Options) -> Result<(), String> {
+    let open = options.open;
+    let running = start(options).await?;
+    println!("OFP Studio: {}   (Ctrl-C to stop)", running.url);
+    if open {
+        open_browser(&running.url);
     }
-    axum::serve(listener, router(studio, tx, has_radio))
-        .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
-        })
-        .await
-        .map_err(|e| e.to_string())
+    let _ = tokio::signal::ctrl_c().await;
+    running.stop().await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Read, Write};
+
+    fn get(port: u16, path: &str) -> String {
+        let mut s = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+        write!(s, "GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n").unwrap();
+        let mut out = String::new();
+        s.read_to_string(&mut out).unwrap();
+        out
+    }
+
+    fn options(dir: &std::path::Path, port: u16, any_port: bool) -> Options {
+        let registry = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../registry");
+        Options { config: Config { registry, captures: dir.join("captures") }, port, open: false, capture: None, any_port }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn started_by_a_caller_it_serves_the_page_and_stops_when_told() {
+        let dir = std::env::temp_dir().join(format!("ofp-studio-start-{}", std::process::id()));
+        let running = start(options(&dir, 0, false)).await.unwrap();
+        let port = running.port;
+        assert_eq!(running.url, format!("http://127.0.0.1:{port}"));
+        let page = tokio::task::spawn_blocking(move || (get(port, "/"), get(port, "/api/state"))).await.unwrap();
+        assert!(page.0.starts_with("HTTP/1.1 200"), "{}", page.0);
+        assert!(page.0.contains("<html"));
+        assert!(page.1.starts_with("HTTP/1.1 200"), "{}", page.1);
+
+        // The port is taken now: the command's way fails with its message, the app's way moves on
+        let taken = start(options(&dir, port, false)).await.err().unwrap();
+        assert!(taken.contains("another `ofp studio` running"), "{taken}");
+        let second = start(options(&dir, port, true)).await.unwrap();
+        assert_ne!(second.port, port);
+        second.stop().await.unwrap();
+
+        running.stop().await.unwrap();
+        assert!(std::net::TcpStream::connect(("127.0.0.1", port)).is_err(), "the port is free again");
+    }
 }

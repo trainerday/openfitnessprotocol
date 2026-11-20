@@ -5,7 +5,12 @@
   "scripts": {
     "start": "cargo run --release -p ofp-cli -- studio",
     "check": "cargo run --release -p ofp-cli --no-default-features -- check",
-    "test": "cargo test --workspace && node --test packages/ofp-js/test/ofp.test.js && node --test examples/test/examples.test.js",
-    "build": "scripts/build.sh"
+    "test": "cargo test --workspace --exclude ofp-studio-app && node --test packages/ofp-js/test/ofp.test.js && node --test examples/test/examples.test.js",
+    "build": "scripts/build.sh",
+    "app": "cargo run -p ofp-studio-app -- --registry \"$PWD/registry\" --captures \"$PWD/captures\"",
+    "app:build": "scripts/app-build.sh"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.6"
   }
 }

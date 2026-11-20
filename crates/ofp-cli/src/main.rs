@@ -164,7 +164,7 @@ fn run(cli: Cli) -> Result<bool, String> {
         }
         Command::Studio { port, no_open, capture, captures } => {
             load(&cli.registry)?; // refuse to start on a registry that does not load
-            let options = ofp_studio::server::Options { config: ofp_studio::Config { registry: cli.registry.clone(), captures }, port, open: !no_open, capture };
+            let options = ofp_studio::server::Options { config: ofp_studio::Config { registry: cli.registry.clone(), captures }, port, open: !no_open, capture, any_port: false };
             tokio::runtime::Builder::new_multi_thread().enable_all().build().map_err(|e| e.to_string())?.block_on(ofp_studio::server::run(options)).map(|_| true)
         }
         #[cfg(feature = "ble")]

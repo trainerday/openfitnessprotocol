@@ -182,14 +182,19 @@ function renderBanner() {
   );
 }
 
-function setTab(tab) { S.tab = tab; render(); }
+function setTab(tab) {
+  S.tab = tab;
+  render();
+  // The list of recordings is read when its tab is opened: one made a moment ago is in it
+  if (tab === 'recordings') api('/api/captures').then((c) => { S.captures = c; if (S.tab === 'recordings') render(); }).catch(() => {});
+}
 
 function render() {
   for (const b of document.querySelectorAll('#tabs button')) b.classList.toggle('on', b.dataset.tab === S.tab);
   renderChip();
   renderBanner();
   const main = $('#main');
-  const view = { devices: viewDevices, record: viewRecord, map: viewMap, live: viewLive, save: viewSave, tester: viewTester }[S.tab]();
+  const view = { devices: viewDevices, record: viewRecord, map: viewMap, live: viewLive, save: viewSave, tester: viewTester, recordings: viewRecordings }[S.tab]();
   main.replaceChildren(view);
   renderLive();
 }
@@ -216,6 +221,14 @@ function viewDevices() {
     h('p', { class: 'hint' }, 'Devices something can read are listed with what reads them: a standard Bluetooth profile, or an OFP table. Wake your device (pedal, press a button) and it shows up within a few seconds. Click Use and you see its values.'),
     h('div', { class: 'scroll' }, h('table', { id: 'devices-table' })),
   ));
+  setTimeout(renderDevicesTable);
+  return wrap;
+}
+
+// ───────────────────────── Recordings (the last tab) ─────────────────────────
+
+function viewRecordings() {
+  const wrap = h('div', {});
   const caps = h('div', { class: 'panel' }, h('h2', {}, 'Earlier recordings'), h('p', { class: 'hint' }, 'Every time you use a device it is recorded into its own file. Open one to look at it again, or to send it to someone.'));
   if (!S.captures.length) caps.append(h('p', { class: 'muted' }, 'None yet.'));
   // A recording someone sent you (they made it with this page and "Download the recording")
@@ -234,7 +247,6 @@ function viewDevices() {
   }
   caps.append(list);
   wrap.append(caps);
-  setTimeout(renderDevicesTable);
   return wrap;
 }
 
@@ -254,6 +266,18 @@ function readsAs(d) {
   return by;
 }
 
+/**
+ * Words in a device's name that say "fitness equipment or a sensor": kinds of machine, and makers that
+ * make little else. Only for sorting the list: a device nothing reads yet that matches is shown, not folded
+ * away with the phones and headsets. A miss costs nothing (it is one click away under "Don't see your
+ * device?"), so the list is short and plain, not complete.
+ */
+const FITNESS_WORDS = /bike|cycl|spin|trainer|treadmill|\brow(er|ing)?\b|\berg\b|ellip|stepper|fitness|\bgym|cadence|watt|\bhrm?\b|heart|strap|pedal|crank|breath|\bm3i?\b|keiser|wahoo|kickr|tickr|tacx|saris|wattbike|concept2|\bc2\b|pm5|peloton|echelon|schwinn|bowflex|nordictrack|ifit|proform|technogym|life ?fitness|precor|yesoul|stages|assioma|favero|quarq|4iiii|\bsrm\b|zwift|garmin|polar|suunto|coros|\bcore\b|tyme|moxy|stryd|magene|thinkrider|xoss|igpsport|bryton|hammerhead|domyos|kettler|bkool|jetblack|cyclops|van ?rysel|direto|suito|csc\b/i;
+/** Nothing reads it yet, but its name says fitness equipment: worth showing without being asked. */
+function looksLikeFitness(d) {
+  return !!d.name && FITNESS_WORDS.test(d.name);
+}
+
 function renderDevicesTable() {
   const t = $('#devices-table');
   if (!t) return;
@@ -262,21 +286,24 @@ function renderDevicesTable() {
     deviceRows.clear();
     t.replaceChildren();
     t.createTHead().append(h('tr', {}, h('th', {}, 'Device'), h('th', {}, 'Read as'), h('th', { class: 'num' }, 'Heard / min'), h('th', { class: 'num' }, 'Longest gap'), h('th', { class: 'num' }, 'Signal'), h('th', {}, '')));
-    // two bodies: what can be read, and everything else nearby (folded away until asked for)
-    t.append(h('tbody', { id: 'devices-readable' }), h('tbody', { id: 'devices-toggle' }, h('tr', {}, h('td', { colspan: 6 },
-      h('button', { class: 'small ghost', id: 'others-button', onclick: () => { showOthers = !showOthers; renderDevicesTable(); } })))), h('tbody', { id: 'devices-others' }));
+    // three bodies: what can be read; what nothing reads yet but looks like fitness equipment (a device to
+    // add); and everything else nearby (folded away until asked for)
+    t.append(h('tbody', { id: 'devices-readable' }),
+      h('tbody', { id: 'devices-maybe' }, h('tr', { class: 'group' }, h('td', { colspan: 6 }, h('b', {}, 'Looks like a fitness device, and nothing reads it yet. '), 'Click Use to record what it sends: that is the first step of adding it.'))),
+      h('tbody', { id: 'devices-toggle' }, h('tr', {}, h('td', { colspan: 6 },
+        h('button', { class: 'small', id: 'others-button', onclick: () => { showOthers = !showOthers; renderDevicesTable(); } })))), h('tbody', { id: 'devices-others' }));
   }
-  const readable = $('#devices-readable'), others = $('#devices-others');
+  const readable = $('#devices-readable'), maybe = $('#devices-maybe'), others = $('#devices-others');
   const seen = new Set();
-  const last = { readable: null, others: null };
-  let otherCount = 0, readableCount = 0;
+  const last = { readable: null, maybe: maybe.firstChild, others: null };
+  let otherCount = 0, readableCount = 0, maybeCount = 0;
   for (const d of S.devices) {
     seen.add(d.device_id);
     const by = readsAs(d);
     // the chosen device stays on top whatever it is
-    const group = by.length || d.device_id === cur ? 'readable' : 'others';
-    if (group === 'others') otherCount++; else readableCount++;
-    const body = group === 'readable' ? readable : others;
+    const group = by.length || d.device_id === cur ? 'readable' : looksLikeFitness(d) ? 'maybe' : 'others';
+    if (group === 'others') otherCount++; else if (group === 'maybe') maybeCount++; else readableCount++;
+    const body = { readable, maybe, others }[group];
     let row = deviceRows.get(d.device_id);
     if (!row) {
       // One click: choose it, start recording, show its values. (Whether it has to be connected to is
@@ -321,14 +348,20 @@ function renderDevicesTable() {
     if (!seen.has(id)) { row.remove(); deviceRows.delete(id); }
   }
   others.hidden = !showOthers;
+  maybe.hidden = !maybeCount;
   const button = $('#others-button');
-  const label = !otherCount ? '' : showOthers ? `Hide the ${otherCount} other things nearby` : `Show ${otherCount} other things nearby (nothing reads them yet: a new device to add would be here)`;
-  if (button.textContent !== label) button.textContent = label;
+  const things = otherCount === 1 ? 'the 1 other thing nearby' : `the ${otherCount} other things nearby`;
+  // The question is what the eye should catch: bold and underlined
+  const label = !otherCount ? '' : showOthers ? `Hide ${things}` : `Don't see your device? Show ${things}`;
+  if (button.textContent !== label) {
+    if (showOthers || !otherCount) button.replaceChildren(label);
+    else button.replaceChildren(h('b', { style: 'text-decoration:underline' }, "Don't see your device?"), ` Show ${things}`);
+  }
   $('#devices-toggle').hidden = !otherCount;
   let empty = $('#devices-empty');
-  if (!readableCount) {
+  if (!readableCount && !maybeCount) {
     if (!empty) { empty = h('tr', { id: 'devices-empty' }, h('td', { colspan: 6, class: 'empty' })); readable.append(empty); }
-    const text = S.radio.startsWith('error') ? S.radio.slice(7) : S.radio === 'off' ? 'This build has no Bluetooth: open a recording below.' : 'Listening… wake your device (pedal, press a button, put the strap on).';
+    const text = S.radio.startsWith('error') ? S.radio.slice(7) : S.radio === 'off' ? 'This build has no Bluetooth: open a recording in the Recordings tab.' : 'Listening… wake your device (pedal, press a button, put the strap on).';
     if (empty.firstChild.textContent !== text) empty.firstChild.textContent = text;
   } else if (empty) empty.remove();
 }
@@ -1024,15 +1057,17 @@ function downloadText(name, text) {
 
 function assistantDialog() {
   const dlg = $('#dialog');
-  const prompt = `OFP Studio is running at ${location.origin} and I have it open. Help me add a device to the Open Fitness Protocol registry.
+  const prompt = `OFP Studio is running at ${location.origin} and I have it open. Help me add a device to the Open Fitness Protocol registry, or fix the table of one that reads wrongly.
 
-1. Read the rules first: GET ${location.origin}/api/guide
-2. See where we are: GET /api/state (fields, tables, the session) and GET /api/capture (packets, my notes, my confirmations). GET /api/similar says whether the registry already knows this device: if it does, extend that table.
+The job: one table (a data file in registry/tables/) that reads my device. You change the table and nothing else. Do not edit the core (anything under crates/, packages/, scripts/) to make a device work. If the table language cannot express what the device sends, stop and tell me exactly what it could not say: that goes to the project as an issue ("A table cannot express this device"), not as a change you make.
+
+1. Read the rules first: GET ${location.origin}/api/guide ("The whole job, start to finish" and "Stay in the table").
+2. See where we are: GET /api/state (fields, tables, the session) and GET /api/capture (packets, my notes, my confirmations). GET /api/similar says whether the registry already knows this device: if it does (a draft counts), fix that table, do not add a second one.
 3. Find the bytes: POST /api/solve {} ranks readings against my notes; POST /api/series {"expr":"u16le[4] / 10"} gives one reading over the capture.
 4. Set the table: POST /api/table/design {"name":…,"mappings":[{"field":"power","expr":"u16le[8]"}],"only_when":…,"instance_expr":…,"instance_label":…} — or POST /api/table/check {"yaml":…} with the full text. Both show up in my page as you do them.
 5. POST /api/table/check tells you whether the capture passes. Do not call /api/save: I will press Save.
 
-The notes and confirmations are mine to give: they are what I read on the device. Ask me to record or note something when you need it. POST bodies are JSON.`;
+We are done when every value my device sends is on the Live step, I have marked each one right, and the check passes. Until then, ask me to record more, to note what the display shows, or to say right or wrong: those are mine to give, they are what I read on the device. POST bodies are JSON.`;
   dlg.replaceChildren(
     h('h2', { style: 'margin-top:0' }, 'Work with an assistant'),
     h('p', { class: 'hint' }, 'This page and an AI assistant can work on the same session: what it finds or changes appears here as it happens, and you stay the one who reads the device and presses Save. Paste this into Claude Code (or any assistant that can call a local address):'),

@@ -12,16 +12,42 @@ It listens on `127.0.0.1` only: the page can write into the registry folder, so 
 network. It needs the registry folder (`--registry`, default `registry`) and keeps recordings in
 `captures/` (git-ignored) until you save.
 
+## The app (its own window)
+
+The same Studio without a browser or a terminal: **OFP Studio.app** (macOS, Apple Silicon). One window; closing
+it ends the app. It is `crates/ofp-studio-app`: a Tauri shell that starts the server above inside its own
+process and shows the page in a window. The page, the API and the radio are the same code; nothing is
+drawn twice. An assistant can still work on the API at the address the app serves (`127.0.0.1:4747`, or
+another port when that one is taken by a running `ofp studio`).
+
+```bash
+npm run app          # from the repo: the window, on the repo's registry/ and captures/
+npm run app:build    # OFP Studio.app and a .dmg in target/release/bundle/ (scripts/app-build.sh)
+```
+
+Where the app keeps things:
+
+- Started from Finder: `Documents/OFP Studio/registry` and `Documents/OFP Studio/captures`. The registry the
+  app was built with is copied in at each start, file by file, never over a file that is already there
+  (a table you saved or changed stays; a table that came with a newer app is added).
+- Started with `--registry <dir> --captures <dir>` (what `npm run app` does): those folders, so **Save**
+  writes into the repo's registry, ready for a pull request.
+
+`scripts/app-build.sh` signs with the Developer ID certificate in the keychain and notarizes with an App Store
+Connect API key from the environment (the names are in the script); without them it builds unsigned. macOS
+asks for Bluetooth under the app's own name the first time. Not built: Windows, a download page, updates.
+
 ## The steps
 
 | Step | What you do |
 |---|---|
-| **1 Devices** | Everything the radio hears, with how often. A badge on devices the registry already reads. Choose one, or open a capture file |
+| **1 Devices** | Everything the radio hears, with how often. A badge on devices the registry already reads. Choose one |
 | **2 Record** | Record what the device sends (tick "Connect to it" for a device that sends nothing in its adverts). Watch the bytes; type what the device's own display shows (`power=150 cadence=82`) |
 | **3 Map** | Click bytes to see their values over the recording, or **Find it for me**: every position, width and scale is tried against your notes. Choose the field (or draft a new one) and add it to the table |
 | **4 Live** | What the device sends right now, grouped by what reads it (an OFP table, or a standard profile such as FTMS or Heart Rate). For each value: **Yes, this is right** or **No, this is wrong**, with one optional line for what you saw. No exact numbers are asked for: they move. Saved in the recording with the time. **Stop and save** ends the recording; it is then offered as one file to send to whoever is helping |
 | **5 Save** | The table as text, the same check CI runs, then Save: the table and the capture go into `registry/tables/`. Nothing is committed or pushed; the page shows the git commands |
 | **Tester** | Connect the way an app would. Standard profiles (FTMS, Cycling Power, Speed and Cadence, Heart Rate) are read out side by side by source; findings in plain words; FTMS trainer control; a log; a report to download |
+| **Recordings** | The last tab: every earlier recording (each use of a device is recorded into its own file), to open again; and opening a file someone sent you |
 
 ## Testing a device for someone else
 

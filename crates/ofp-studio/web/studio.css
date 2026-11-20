@@ -102,3 +102,7 @@ a.btn { text-decoration: none; display: inline-block; }
 .live-status.quiet .big { color: var(--bad); }
 .live-status.stopped .big { color: var(--muted); }
 .tile .value.none { font-size: 16px; font-weight: 500; color: var(--muted); margin: 22px 0; }
+
+/* Devices: the heading of a group inside the table */
+tr.group td { padding-top: 18px; color: var(--muted); border-bottom: 1px solid var(--line, #e2e8f0); }
+tr.group td b { color: inherit; }

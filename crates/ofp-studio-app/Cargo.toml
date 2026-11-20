@@ -1,0 +1,19 @@
+[package]
+name = "ofp-studio-app"
+description = "OFP Studio as an app with its own window: the same page and server as `ofp studio`, without a browser or a terminal."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "ofp-studio-app"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2.7.6", features = [] }
+
+[dependencies]
+ofp-studio = { path = "../ofp-studio", features = ["ble"] }
+ofp-registry = { path = "../ofp-registry" }
+tauri = { version = "2.12.7", features = [] }

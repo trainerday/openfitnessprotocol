@@ -1,0 +1,19 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "OFP Studio",
+  "identifier": "com.trainerday.ofpstudio",
+  "app": {
+    "windows": [],
+    "security": { "csp": null }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app", "dmg"],
+    "category": "DeveloperTool",
+    "copyright": "TrainerDay Inc, Apache-2.0",
+    "shortDescription": "Record a fitness device, see what it sends, and write the table that reads it.",
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
+    "resources": { "../../registry/": "registry/" },
+    "macOS": { "minimumSystemVersion": "11.0" }
+  }
+}
