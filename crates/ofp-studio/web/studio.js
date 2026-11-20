@@ -815,6 +815,7 @@ function renderTiles() {
     const quietFor = S.lastPacketAt ? Math.round((Date.now() - S.lastPacketAt) / 1000) : null;
     let cls = 'listening', big, small = '';
     if (!s || !s.recording) { cls = 'stopped'; big = 'Stopped'; small = S.advanced ? 'Nothing is being read. Press “Start again” to listen.' : ''; }
+    else if (quietFor === null && !S.advanced) { cls = 'listening waiting'; big = 'Connecting to your device…'; small = 'This can take up to 20 seconds. Keep it awake: pedal, press a button, or put the strap on.'; }
     else if (quietFor === null) { big = 'Listening… nothing received yet'; small = 'Wake the device: pedal, press a button, put the strap on.'; }
     else if (quietFor > 8) { cls = 'quiet'; big = `Nothing received for ${quietFor} s`; small = 'The device has gone quiet, or is out of range.'; }
     else if (!groups.length && !S.advanced) { big = 'We can hear your device, but OFP can\'t read its numbers yet'; small = 'That is fine: keep it going for a minute, then send it to us below. That is how a device gets added.'; }
@@ -1108,9 +1109,10 @@ const SUBMIT = new URLSearchParams(location.search).get('submit') || 'https://op
  *  does not disconnect: the device keeps recording until another one is connected. */
 let simpleView = 'check';
 
-const connect = guard(async (d) => {
+const connect = guard(async (d, button) => {
   S.sent = null;
   simpleView = 'check';
+  if (button) { button.disabled = true; button.classList.add('busy'); button.textContent = 'Connecting…'; }
   if (!(session() && session().device_id === d.device_id)) {
     await api('/api/session', { device_id: d.device_id });
     await api('/api/record/start', {});
@@ -1182,7 +1184,7 @@ function renderDeviceCards() {
     let card = cardEls.get(d.device_id);
     if (!card) {
       card = h('div', { class: 'device-card' }, h('div', { class: 'title' }), h('div', { class: 'what' }),
-        h('button', { class: 'connect', onclick: () => (session() && session().device_id === d.device_id ? backToDevice() : connect(d)) }, 'Connect'));
+        h('button', { class: 'connect', onclick: (e) => (session() && session().device_id === d.device_id ? backToDevice() : connect(d, e.currentTarget)) }, 'Connect'));
       cardEls.set(d.device_id, card);
     }
     const box = boxes[group];
@@ -1210,8 +1212,9 @@ function renderDeviceCards() {
   t.hidden = !counts.others;
   t.replaceChildren(...(showOthers ? [`Hide ${things}`] : [h('b', { style: 'text-decoration:underline' }, "Don't see your device?"), ` Show ${things}`]));
   const empty = $('#cards-empty');
-  const text = counts.readable || counts.maybe ? '' : S.radio.startsWith('error') ? S.radio.slice(7) : S.radio === 'off' ? 'This build has no Bluetooth.' : 'Listening… wake your device.';
+  const text = counts.readable || counts.maybe ? '' : S.radio.startsWith('error') ? S.radio.slice(7) : S.radio === 'off' ? 'This build has no Bluetooth.' : 'Looking for devices… wake yours up.';
   if (empty.textContent !== text) empty.textContent = text;
+  empty.classList.toggle('searching', text.startsWith('Looking'));
 }
 
 /** What the device says about itself when connected (Device Information: maker 2a29, model 2a24). */
