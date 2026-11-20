@@ -836,13 +836,16 @@ function viewLive() {
     h('p', { class: 'hint' }, 'What the device is sending right now, grouped by what reads it. Use the device normally and look at its own display: for each value, is this right? You do not need to match an exact number, they move. ',
       'If something is wrong, say so here and then tell your assistant what you saw.'));
   if (s.from_file) head.append(h('p', { class: 'problem' }, 'This is a capture file. Live values need the device: choose it in Devices.'));
-  else if (!s.recording) head.append(h('div', { class: 'row' }, h('span', { class: 'muted' }, 'Stopped.'), h('button', { class: 'primary', onclick: guard(async () => { await api('/api/record/start', {}); await reload(); }) }, 'Start again (a new recording)')));
-  else head.append(h('div', { class: 'row' }, h('span', { class: 'dot rec' }), h('span', {}, 'Recording what the device sends'), h('button', { class: 'danger', onclick: guard(async () => { await api('/api/record/stop', {}); await reload(); }) }, 'Stop'),
-    h('button', { class: 'small ghost', onclick: () => setTab('save') }, 'Check and save →')));
-  if (S.capture && S.capture.packets.length) {
-    head.append(h('div', { class: 'row', style: 'margin-top:12px' },
-      h('a', { class: 'btn', href: '/api/capture/file', download: '' }, 'Download the recording'),
-      h('span', { class: 'muted' }, 'One file with everything the device sent and what you answered. Send it to whoever is helping you: they open it in their own Studio.')));
+  else if (!s.recording) {
+    // Stopped: the recording is already saved (it is written as it happens). Say where, and offer it.
+    const file = s.file ? s.file.split('/').pop() : null;
+    head.append(h('div', { class: 'row' },
+      file ? h('span', { class: 'good' }, '✓ Saved as ' + file) : h('span', { class: 'muted' }, 'Stopped.'),
+      file ? h('a', { class: 'btn', href: '/api/capture/file', download: '' }, 'Download it to send') : null,
+      h('button', { class: 'primary', onclick: guard(async () => { await api('/api/record/start', {}); await reload(); }) }, 'Start again (a new recording)')));
+  } else {
+    head.append(h('div', { class: 'row' }, h('span', { class: 'dot rec' }), h('span', {}, 'Recording what the device sends'),
+      h('button', { class: 'danger', onclick: guard(async () => { await api('/api/record/stop', {}); await reload(); toast('Stopped and saved.'); }) }, 'Stop and save')));
   }
 
   // Anything else that looks wrong, in the rider's own words: saved with the time, next to what the device sent.

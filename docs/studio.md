@@ -19,7 +19,7 @@ network. It needs the registry folder (`--registry`, default `registry`) and kee
 | **1 Devices** | Everything the radio hears, with how often. A badge on devices the registry already reads. Choose one, or open a capture file |
 | **2 Record** | Record what the device sends (tick "Connect to it" for a device that sends nothing in its adverts). Watch the bytes; type what the device's own display shows (`power=150 cadence=82`) |
 | **3 Map** | Click bytes to see their values over the recording, or **Find it for me**: every position, width and scale is tried against your notes. Choose the field (or draft a new one) and add it to the table |
-| **4 Live** | What the device sends right now, grouped by what reads it (an OFP table, or a standard profile such as FTMS or Heart Rate). For each value: **Yes, this is right** or **No, this is wrong**, with one optional line for what you saw. No exact numbers are asked for: they move. Saved in the recording with the time. **Download the recording** gives one file to send to whoever is helping |
+| **4 Live** | What the device sends right now, grouped by what reads it (an OFP table, or a standard profile such as FTMS or Heart Rate). For each value: **Yes, this is right** or **No, this is wrong**, with one optional line for what you saw. No exact numbers are asked for: they move. Saved in the recording with the time. **Stop and save** ends the recording; it is then offered as one file to send to whoever is helping |
 | **5 Save** | The table as text, the same check CI runs, then Save: the table and the capture go into `registry/tables/`. Nothing is committed or pushed; the page shows the git commands |
 | **Tester** | Connect the way an app would. Standard profiles (FTMS, Cycling Power, Speed and Cadence, Heart Rate) are read out side by side by source; findings in plain words; FTMS trainer control; a log; a report to download |
 
@@ -29,7 +29,7 @@ The person with the device and the person fixing the table do not have to be tog
 
 1. The owner starts the Studio (`npm start`), picks the device, opens **Live**, presses Start, uses
    the device normally and answers right or wrong for each value.
-2. They press **Download the recording** and send that one file.
+2. They press **Stop and save**, then **Download it to send**, and send that one file.
 3. The helper opens it in their own Studio (Devices → "A file someone sent you"). It holds everything
    the device sent, and for each "wrong": what was shown, what the owner saw, and when.
 
