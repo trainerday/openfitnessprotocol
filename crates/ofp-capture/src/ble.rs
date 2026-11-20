@@ -115,12 +115,12 @@ impl Scanner {
         }
     }
 
-    pub async fn stop(&self) {
+    pub async fn stop(&mut self) {
         let _ = self.adapter.stop_scan().await;
     }
 
     /// The device behind an advertisement, for connecting.
-    pub async fn peripheral(&self, device_id: &str) -> Result<Peripheral, String> {
+    pub async fn peripheral(&mut self, device_id: &str) -> Result<Peripheral, String> {
         for p in self.adapter.peripherals().await.map_err(err("Bluetooth"))? {
             if p.id().to_string() == device_id {
                 return Ok(p);

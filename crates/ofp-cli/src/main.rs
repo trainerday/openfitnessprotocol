@@ -48,6 +48,20 @@ enum Command {
         #[arg(long)]
         all: bool,
     },
+    /// Open the Studio: a page for adding a device (record, find the bytes, confirm, save a table).
+    Studio {
+        #[arg(long, default_value_t = 4747)]
+        port: u16,
+        /// Do not open the browser.
+        #[arg(long)]
+        no_open: bool,
+        /// Open this capture file at the start.
+        #[arg(long)]
+        capture: Option<PathBuf>,
+        /// Where captures being worked on are kept.
+        #[arg(long, default_value = "captures")]
+        captures: PathBuf,
+    },
     /// List the Bluetooth devices in range with their advert rate.
     #[cfg(feature = "ble")]
     Scan {
@@ -147,6 +161,11 @@ fn run(cli: Cli) -> Result<bool, String> {
                 eprintln!("error: {e}");
             }
             Ok(r.errors.is_empty())
+        }
+        Command::Studio { port, no_open, capture, captures } => {
+            load(&cli.registry)?; // refuse to start on a registry that does not load
+            let options = ofp_studio::server::Options { config: ofp_studio::Config { registry: cli.registry.clone(), captures }, port, open: !no_open, capture };
+            tokio::runtime::Builder::new_multi_thread().enable_all().build().map_err(|e| e.to_string())?.block_on(ofp_studio::server::run(options)).map(|_| true)
         }
         #[cfg(feature = "ble")]
         Command::Scan { seconds } => live::scan(seconds).map(|_| true),

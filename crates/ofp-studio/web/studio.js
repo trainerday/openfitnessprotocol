@@ -1,0 +1,729 @@
+// OFP Studio page. Plain JavaScript, no build step. The server holds the session; this page shows it
+// and follows the live event stream, so what an assistant changes over the API appears here too.
+'use strict';
+
+const S = {
+  tab: 'devices',
+  state: null,        // GET /api/state
+  devices: [],
+  captures: [],
+  capture: null,      // { packets: [[t, stream, hex]], notes, confirms }
+  stream: null,
+  sel: [],            // selected byte positions (Map step)
+  expr: '',
+  series: null,
+  field: '',
+  solve: null,
+  similar: null,
+  yaml: '',
+  yamlDirty: false,
+  checked: null,
+  saved: null,
+  live: { source: null, values: {}, stale: false },
+  radio: 'off',
+};
+
+const $ = (sel, root = document) => root.querySelector(sel);
+
+function h(tag, attrs = {}, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v == null || v === false) continue;
+    if (k === 'class') el.className = v;
+    else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+    else if (k === 'value') el.value = v;
+    else if (k === 'checked' || k === 'disabled' || k === 'selected' || k === 'hidden') el[k] = !!v;
+    else el.setAttribute(k, v);
+  }
+  for (const kid of kids.flat()) {
+    if (kid == null || kid === false) continue;
+    el.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+  }
+  return el;
+}
+
+let toastTimer;
+function toast(text, bad = false) {
+  const t = $('#toast');
+  t.textContent = text;
+  t.className = 'toast' + (bad ? ' bad' : '');
+  t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.hidden = true; }, bad ? 7000 : 2600);
+}
+
+async function api(path, body) {
+  const res = await fetch(path, body === undefined ? {} : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+const guard = (fn) => async (...args) => { try { return await fn(...args); } catch (e) { toast(e.message, true); } };
+
+const session = () => S.state && S.state.session;
+const fields = () => (S.state && S.state.registry.fields) || [];
+const fieldOf = (key) => fields().find((f) => f.key === key);
+const bytesOf = (hex) => { const out = []; for (let i = 0; i < hex.length; i += 2) out.push(parseInt(hex.substr(i, 2), 16)); return out; };
+const fmt = (v, f) => (v == null ? '–' : Number(v).toFixed(f ? f.decimals : (Number.isInteger(v) ? 0 : 1)));
+const secs = (ms) => { const s = Math.round(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+
+// ───────────────────────── loading ─────────────────────────
+
+async function loadState() {
+  S.state = await api('/api/state');
+  S.radio = S.state.radio;
+  const s = session();
+  if (s) {
+    if (!S.yamlDirty) S.yaml = s.draft || '';
+    S.live.source = s.live.source;
+    S.live.values = { ...s.live.values };
+    if (!S.stream || !s.streams.some((x) => x.key === S.stream)) S.stream = s.streams[0] ? s.streams[0].key : null;
+  }
+}
+
+async function loadCapture() {
+  if (!session()) { S.capture = null; S.similar = null; return; }
+  const c = await api('/api/capture');
+  S.capture = { packets: c.packets, notes: c.notes, confirms: c.confirms };
+  S.similar = c.packets.length ? await api('/api/similar').catch(() => null) : null;
+}
+
+async function reload() {
+  await loadState();
+  await loadCapture().catch(() => { S.capture = null; });
+  S.captures = await api('/api/captures').catch(() => []);
+  render();
+}
+
+function streamPackets() {
+  if (!S.capture || !S.stream) return [];
+  return S.capture.packets.filter((p) => p[1] === S.stream);
+}
+
+// ───────────────────────── events ─────────────────────────
+
+let framePending = false;
+function renderSoon() {
+  if (framePending) return;
+  framePending = true;
+  requestAnimationFrame(() => { framePending = false; renderLive(); });
+}
+
+function connectEvents() {
+  const es = new EventSource('/api/events');
+  es.onmessage = guard(async (ev) => {
+    const m = JSON.parse(ev.data);
+    switch (m.type) {
+      case 'devices': S.devices = m.devices; if (S.tab === 'devices') renderDevicesTable(); break;
+      case 'packet':
+        if (S.capture) S.capture.packets.push([m.t, m.stream, m.hex]);
+        if (!S.stream) { S.stream = m.stream; render(); } else renderSoon();
+        break;
+      case 'note': if (S.capture) S.capture.notes.push(m); render(); break;
+      case 'confirm': if (S.capture) S.capture.confirms.push(m); renderSoon(); if (S.tab === 'live') render(); break;
+      case 'source': S.live.source = m.source; if (S.tab === 'live') render(); break;
+      case 'values': Object.assign(S.live.values, m.fields); S.live.stale = !!m.stale; for (const k of m.out_of_range || []) delete S.live.values[k]; if (S.tab === 'live') renderTiles(); break;
+      case 'recording': await loadState(); render(); break;
+      case 'session': S.sel = []; S.expr = ''; S.series = null; S.solve = null; S.checked = null; S.saved = null; S.yamlDirty = false; S.live = { source: null, values: {}, stale: false }; await reload(); break;
+      case 'draft': S.yaml = m.yaml || ''; S.yamlDirty = false; await loadState(); render(); break;
+      case 'checked':
+        if (!S.yamlDirty) S.yaml = m.yaml;
+        S.checked = { ...(S.checked && S.checked.yaml === m.yaml ? S.checked : {}), ok: m.ok, problems: m.problems, summary: m.summary, compiled: true, yaml: m.yaml };
+        if (S.tab === 'save') render();
+        break;
+      case 'radio': S.radio = m.status; renderChip(); if (m.status.startsWith('error')) toast(m.status.slice(7), true); break;
+      case 'connected': toast('Connected. Recording what it sends.'); await reload(); break;
+    }
+  });
+}
+
+// ───────────────────────── chrome ─────────────────────────
+
+function renderChip() {
+  const s = session();
+  const chip = $('#chip');
+  chip.replaceChildren();
+  if (s) {
+    chip.append(h('span', { class: 'dot' + (s.recording ? ' rec' : '') }), h('span', {}, s.name + (s.from_file ? ' (capture file)' : s.recording ? ' · recording' : '')));
+  } else {
+    chip.append(h('span', {}, 'no device chosen'));
+  }
+  chip.append(h('span', { class: 'muted' }, '· radio: ' + S.radio.replace(/^error: .*/, 'problem')));
+}
+
+function renderBanner() {
+  const b = $('#banner');
+  const existing = S.similar && S.similar.existing_tables && S.similar.existing_tables[0];
+  if (!existing || !session()) { b.hidden = true; return; }
+  b.hidden = false;
+  b.replaceChildren(
+    h('b', {}, `The registry already knows this device (table “${existing.table}”). `),
+    'Extend that table rather than adding a second one. ',
+    h('button', { class: 'small', onclick: guard(async () => { S.yaml = existing.yaml; S.yamlDirty = true; setTab('save'); await runCheck(); }) }, 'Open that table'),
+  );
+}
+
+function setTab(tab) { S.tab = tab; render(); }
+
+function render() {
+  for (const b of document.querySelectorAll('#tabs button')) b.classList.toggle('on', b.dataset.tab === S.tab);
+  renderChip();
+  renderBanner();
+  const main = $('#main');
+  const view = { devices: viewDevices, record: viewRecord, map: viewMap, live: viewLive, save: viewSave }[S.tab]();
+  main.replaceChildren(view);
+  renderLive();
+}
+
+/** Things that change with every packet: grids, counters, charts that follow the capture. */
+function renderLive() {
+  for (const el of document.querySelectorAll('[data-grid]')) fillGrid(el);
+  const st = $('#rec-stats');
+  if (st) fillStats(st);
+}
+
+function needSession(title) {
+  return h('div', { class: 'panel empty' }, h('p', {}, title), h('button', { class: 'primary', onclick: () => setTab('devices') }, 'Choose a device'));
+}
+
+// ───────────────────────── 1 Devices ─────────────────────────
+
+function viewDevices() {
+  const wrap = h('div', {});
+  wrap.append(h('div', { class: 'panel' },
+    h('h2', {}, 'Devices in range'),
+    h('p', { class: 'hint' }, 'Everything the radio hears. Wake your device (pedal, press a button) and it shows up within a few seconds.'),
+    h('div', { class: 'scroll' }, h('table', { id: 'devices-table' })),
+  ));
+  const caps = h('div', { class: 'panel' }, h('h2', {}, 'Or open a capture'), h('p', { class: 'hint' }, 'A recording made earlier, by this page or by `ofp record`. Works without a radio.'));
+  if (!S.captures.length) caps.append(h('p', { class: 'muted' }, 'No captures yet.'));
+  const list = h('ul', { class: 'list' });
+  for (const c of S.captures) {
+    list.append(h('li', {}, h('span', { class: 'mono fill' }, c.name), h('span', { class: 'badge' }, c.place),
+      h('button', { class: 'small', onclick: guard(async () => { await api('/api/session', { capture: c.path }); setTab('map'); }) }, 'Open')));
+  }
+  caps.append(list);
+  wrap.append(caps);
+  setTimeout(renderDevicesTable);
+  return wrap;
+}
+
+function renderDevicesTable() {
+  const t = $('#devices-table');
+  if (!t) return;
+  const cur = session() && session().device_id;
+  t.replaceChildren(h('tr', {}, h('th', {}, 'Name'), h('th', {}, 'Sends'), h('th', { class: 'num' }, 'Heard / min'), h('th', { class: 'num' }, 'Longest gap'), h('th', { class: 'num' }, 'Signal'), h('th', {}, '')));
+  if (!S.devices.length) {
+    t.append(h('tr', {}, h('td', { colspan: 6, class: 'empty' }, S.radio.startsWith('error') ? S.radio.slice(7) : S.radio === 'off' ? 'This build has no Bluetooth: open a capture below.' : 'Listening…')));
+    return;
+  }
+  for (const d of S.devices) {
+    const sends = [];
+    if (d.companies.length) sends.push('data in adverts (company ' + d.companies.map((c) => '0x' + c).join(', ') + ')');
+    if (d.services.length) sends.push('services ' + d.services.map((u) => (u.length > 8 ? u.slice(0, 8) + '…' : u)).join(' '));
+    t.append(h('tr', {},
+      h('td', {}, d.name || h('span', { class: 'muted' }, '(no name)'), ' ', d.known ? h('span', { class: 'badge good', title: 'A table in the registry reads this device' }, d.known) : null),
+      h('td', { class: 'muted' }, sends.join(' · ') || '–'),
+      h('td', { class: 'num' }, d.per_min),
+      h('td', { class: 'num' }, d.longest_gap_s + ' s'),
+      h('td', { class: 'num' }, d.rssi == null ? '–' : d.rssi),
+      h('td', {}, d.device_id === cur ? h('span', { class: 'badge' }, 'chosen')
+        : h('button', { class: 'small primary', onclick: guard(async () => { await api('/api/session', { device_id: d.device_id }); setTab('record'); }) }, 'Use')),
+    ));
+  }
+}
+
+// ───────────────────────── byte grid ─────────────────────────
+
+function gridEl(selectable) {
+  return h('div', { class: 'grid', 'data-grid': selectable ? 'select' : 'view' });
+}
+
+function fillGrid(el) {
+  const packets = streamPackets();
+  if (!packets.length) { el.replaceChildren(h('div', { class: 'muted' }, 'No packets yet.')); return; }
+  const last = bytesOf(packets[packets.length - 1][2]);
+  const prev = packets.length > 1 ? bytesOf(packets[packets.length - 2][2]) : last;
+  const recent = packets.slice(-150).map((p) => bytesOf(p[2]));
+  // how many different values each byte took over the whole capture (cheap enough at this size)
+  const distinct = last.map(() => new Set());
+  const step = Math.max(1, Math.floor(packets.length / 1500));
+  for (let i = 0; i < packets.length; i += step) { const b = bytesOf(packets[i][2]); for (let j = 0; j < distinct.length && j < b.length; j++) distinct[j].add(b[j]); }
+  const selectable = el.dataset.grid === 'select';
+  if (el.children.length !== last.length || !el.firstChild.classList || !el.firstChild.classList.contains('byte')) {
+    el.replaceChildren(...last.map((_, i) => {
+      const cell = h('div', { class: 'byte', title: 'position ' + i }, h('div', { class: 'i' }, i), h('div', { class: 'h' }), h('div', { class: 'd' }), h('canvas', { width: 80, height: 32 }));
+      if (selectable) cell.addEventListener('click', () => selectByte(i));
+      return cell;
+    }));
+  }
+  [...el.children].forEach((cell, i) => {
+    cell.children[1].textContent = last[i].toString(16).padStart(2, '0');
+    cell.children[2].textContent = last[i];
+    cell.style.setProperty('--heat', Math.min(0.28, Math.log2(distinct[i].size) * 0.04).toFixed(3));
+    cell.classList.toggle('flash', last[i] !== prev[i]);
+    cell.classList.toggle('sel', selectable && S.sel.includes(i));
+    spark(cell.children[3], recent.map((b) => b[i]));
+  });
+}
+
+function spark(canvas, values) {
+  const c = canvas.getContext('2d');
+  c.clearRect(0, 0, canvas.width, canvas.height);
+  const vals = values.filter((v) => v != null);
+  if (vals.length < 2) return;
+  const min = Math.min(...vals), max = Math.max(...vals);
+  if (min === max) return;
+  c.strokeStyle = getComputedStyle(document.body).getPropertyValue('--accent');
+  c.lineWidth = 2;
+  c.beginPath();
+  vals.forEach((v, i) => {
+    const x = (i / (vals.length - 1)) * canvas.width, y = canvas.height - 2 - ((v - min) / (max - min)) * (canvas.height - 4);
+    i ? c.lineTo(x, y) : c.moveTo(x, y);
+  });
+  c.stroke();
+}
+
+function streamPicker() {
+  const s = session();
+  if (!s || s.streams.length < 2) return null;
+  return h('div', { class: 'row' }, h('span', { class: 'muted' }, 'Stream'),
+    h('select', { onchange: (e) => { S.stream = e.target.value; S.sel = []; S.series = null; render(); } },
+      s.streams.map((x) => h('option', { value: x.key, selected: x.key === S.stream }, (x.key === 'adv' ? 'advertisements' : 'characteristic ' + x.key) + ` (${x.packets})`))));
+}
+
+// ───────────────────────── 2 Record ─────────────────────────
+
+function fillStats(el) {
+  const packets = streamPackets();
+  const span = packets.length > 1 ? (packets[packets.length - 1][0] - packets[0][0]) / 60000 : 0;
+  let gap = 0;
+  for (let i = 1; i < packets.length; i++) gap = Math.max(gap, packets[i][0] - packets[i - 1][0]);
+  const stat = (v, label) => h('div', { class: 'stat' }, h('b', {}, v), h('span', {}, label));
+  el.replaceChildren(
+    stat(packets.length, 'packets'),
+    stat(span > 0 ? Math.round((packets.length - 1) / span) : '–', 'per minute'),
+    stat((gap / 1000).toFixed(1) + ' s', 'longest gap'),
+    stat(packets.length ? secs(packets[packets.length - 1][0]) : '0:00', 'recorded'),
+    stat(S.capture ? S.capture.notes.length : 0, 'notes'),
+  );
+}
+
+function viewRecord() {
+  const s = session();
+  if (!s) return needSession('Choose the device to record first.');
+  const wrap = h('div', {});
+  const toggle = s.recording
+    ? h('button', { class: 'danger', onclick: guard(async () => { await api('/api/record/stop', {}); await reload(); }) }, 'Stop recording')
+    : h('button', { class: 'primary', disabled: s.from_file, onclick: guard(async () => { await api('/api/record/start', { connect: $('#connect') ? $('#connect').checked : undefined }); await loadState(); render(); }) }, 'Start recording');
+  wrap.append(h('div', { class: 'panel' },
+    h('h2', {}, 'Record ' + s.name),
+    h('p', { class: 'hint' }, s.from_file ? 'This is a capture file: it can be read and mapped, not recorded into. Choose the device in Devices to record more.'
+      : 'Use the device as you normally would while this records: change effort, speed, gear, whatever it measures.'),
+    h('div', { class: 'row' }, toggle,
+      s.from_file ? null : h('label', { style: 'margin:0', class: 'row' }, h('input', { type: 'checkbox', id: 'connect', checked: s.connect, disabled: s.recording }), 'Connect to it (for a device that sends nothing in its adverts)')),
+    h('div', { class: 'stats', id: 'rec-stats' }),
+    s.file ? h('div', { class: 'muted mono' }, s.file) : null,
+  ));
+  wrap.append(h('div', { class: 'panel' },
+    h('h2', {}, 'What it sends'),
+    h('p', { class: 'hint' }, 'The latest packet, one box per byte. A byte that just changed is red; a blue tint means it changes often; the small line is its recent history.'),
+    streamPicker(), gridEl(false)));
+
+  const noteInput = h('input', { class: 'fill', placeholder: 'power=150 cadence=82', onkeydown: (e) => { if (e.key === 'Enter') saveNote(); } });
+  const saveNote = guard(async () => { if (!noteInput.value.trim()) return; await api('/api/note', { text: noteInput.value }); noteInput.value = ''; toast('Noted'); });
+  const notes = h('ul', { class: 'list' });
+  for (const n of (S.capture ? S.capture.notes : []).slice().reverse()) notes.append(h('li', {}, h('span', { class: 'muted mono' }, secs(n.t)), h('span', {}, n.text)));
+  wrap.append(h('div', { class: 'panel' },
+    h('h2', {}, 'What the device’s own display shows'),
+    h('p', { class: 'hint' }, 'At a steady moment, type what you read on the device and press Enter. These are the known answers: “Find it for me” in the next step works from them. Two or three at different efforts are enough.'),
+    h('div', { class: 'row' }, noteInput, h('button', { onclick: saveNote, disabled: !s.recording }, 'Save note')),
+    h('div', { class: 'row', style: 'margin-top:8px' }, h('span', { class: 'muted' }, 'Fields:'),
+      fields().map((f) => h('button', { class: 'small ghost', title: f.description || '', onclick: () => { noteInput.value = (noteInput.value + ' ' + f.key + '=').trimStart(); noteInput.focus(); } }, f.key))),
+    notes,
+    h('div', { class: 'row', style: 'margin-top:12px' }, h('button', { onclick: () => setTab('map') }, 'Next: find the bytes →')),
+  ));
+  return wrap;
+}
+
+// ───────────────────────── 3 Map ─────────────────────────
+
+function selectByte(i) {
+  if (S.sel.includes(i)) S.sel = [];
+  else if (S.sel.length === 1 && Math.abs(S.sel[0] - i) === 1) S.sel = [Math.min(S.sel[0], i), Math.max(S.sel[0], i)];
+  else S.sel = [i];
+  if (S.sel.length === 1) setExpr(`u8[${S.sel[0]}]`);
+  else if (S.sel.length === 2) setExpr(`u16le[${S.sel[0]}]`);
+  else render();
+}
+
+const setExpr = guard(async (expr) => {
+  S.expr = expr;
+  S.series = null;
+  render();
+  if (!expr.trim()) return;
+  try {
+    S.series = await api('/api/series', { stream: S.stream, expr });
+  } catch (e) {
+    S.series = { error: e.message };
+  }
+  render();
+});
+
+function design() {
+  const d = (session() && session().design) || {};
+  return { id: d.id || '', name: d.name || '', mappings: d.mappings || [], only_when: d.only_when || '', instance_label: d.instance_label || '', instance_expr: d.instance_expr || '', stale_after_ms: d.stale_after_ms || 3000, provenance: d.provenance || '', verified_on: d.verified_on || '' };
+}
+
+const saveDesign = guard(async (d) => {
+  await api('/api/table/design', d);
+  S.checked = null;
+});
+
+function addMapping(field, expr) {
+  if (!field) return toast('Choose which field this is.', true);
+  if (!expr.trim()) return toast('Select a byte or type an expression first.', true);
+  const d = design();
+  d.mappings = d.mappings.filter((m) => m.field !== field).concat([{ field, expr }]);
+  saveDesign(d);
+  toast(`${field} ← ${expr}`);
+}
+
+function viewMap() {
+  const s = session();
+  if (!s) return needSession('Choose a device or open a capture first.');
+  const d = design();
+  const left = h('div', {});
+  const right = h('div', {});
+
+  // readers + scale for the selection
+  const readers = [];
+  if (S.sel.length === 1) readers.push(`u8[${S.sel[0]}]`, `i8[${S.sel[0]}]`);
+  if (S.sel.length === 2) readers.push(`u16le[${S.sel[0]}]`, `u16be[${S.sel[0]}]`, `i16le[${S.sel[0]}]`, `u8[${S.sel[0]}] * 60 + u8[${S.sel[1]}]`);
+  const base = S.expr.replace(/ [/*] \d+$/, '');
+  const exprInput = h('input', { class: 'fill mono', value: S.expr, placeholder: 'u16le[4] / 10', onchange: (e) => setExpr(e.target.value) });
+  const f = fieldOf(S.field);
+  const fieldSelect = h('select', { onchange: (e) => { if (e.target.value === '+') { e.target.value = S.field; newFieldDialog(); } else { S.field = e.target.value; render(); } } },
+    h('option', { value: '' }, 'Which field is this?'),
+    fields().map((x) => h('option', { value: x.key, selected: x.key === S.field }, `${x.name}${x.unit ? ' (' + x.unit + ')' : ''}`)),
+    h('option', { value: '+' }, '+ A new field…'));
+
+  const chart = h('canvas', { class: 'chart', width: 1200, height: 380 });
+  left.append(h('div', { class: 'panel' },
+    h('h2', {}, 'Pick the bytes'),
+    h('p', { class: 'hint' }, 'Click a byte, or two neighbours for a two-byte number. The chart shows that reading over the whole capture; the dots are your notes for the chosen field.'),
+    streamPicker(), gridEl(true),
+    h('div', { class: 'row', style: 'margin-top:10px' },
+      readers.map((r) => h('button', { class: 'small' + (base === r ? ' primary' : ''), onclick: () => setExpr(r) }, r.replace(/\[.*/, '').replace('u8', readers.length > 2 && r.includes('*') ? 'min:sec' : 'u8'))),
+      S.sel.length ? [['× 1', ''], ['÷ 10', ' / 10'], ['÷ 100', ' / 100'], ['× 10', ' * 10']].map(([label, suffix]) =>
+        h('button', { class: 'small ghost', onclick: () => setExpr((base.includes(' ') && suffix ? `(${base})` : base) + suffix) }, label)) : null),
+    h('label', {}, 'Reading (the table language; edit freely)'),
+    h('div', { class: 'row' }, exprInput, fieldSelect, h('button', { class: 'primary', onclick: () => addMapping(S.field, exprInput.value) }, 'Add to table')),
+    f ? h('p', { class: 'muted', style: 'margin:6px 0 0' }, `${f.type === 'int' ? 'whole number' : f.decimals + ' decimal' + (f.decimals > 1 ? 's' : '')} · plausible ${f.min}–${f.max} ${f.unit} · ${f.kind}. ${f.description || ''}`) : null,
+    S.series && S.series.error ? h('p', { class: 'problem' }, S.series.error) : null,
+    S.series && !S.series.error ? h('p', { class: 'muted', style: 'margin:8px 0 4px' }, `${S.series.count} values, from ${S.series.min} to ${S.series.max}`) : null,
+    chart,
+  ));
+  setTimeout(() => drawChart(chart, S.series && S.series.points || [], notesFor(S.field)));
+
+  // find it for me
+  const found = h('div', {});
+  if (S.solve) {
+    for (const [key, r] of Object.entries(S.solve.fields)) {
+      const known = !!fieldOf(key);
+      found.append(h('h3', {}, `${key} · ${r.notes} note${r.notes > 1 ? 's' : ''}` + (known ? '' : ' · not a registry field')));
+      if (!r.candidates.length) found.append(h('p', { class: 'muted' }, 'No reading of the packets gives these values.'));
+      const ul = h('ul', { class: 'list' });
+      for (const c of r.candidates) {
+        ul.append(h('li', {}, h('span', { class: 'mono fill' }, c.expr),
+          h('span', { class: 'badge ' + (c.fits === c.notes ? 'good' : '') }, `${c.fits} of ${c.notes}`),
+          h('span', { class: 'muted' }, '±' + c.mean_error.toFixed(1)),
+          h('button', { class: 'small', onclick: () => { S.field = known ? key : S.field; S.sel = []; setExpr(c.expr); } }, 'Show'),
+          known ? h('button', { class: 'small primary', onclick: () => addMapping(key, c.expr) }, 'Use') : null));
+      }
+      found.append(ul);
+    }
+  }
+  right.append(h('div', { class: 'panel' },
+    h('h2', {}, 'Find it for me'),
+    h('p', { class: 'hint' }, 'Tries every position, width and scale against the values you noted, best fit first.'),
+    h('button', { class: 'primary', onclick: guard(async () => { S.solve = await api('/api/solve', { stream: S.stream }); render(); }) }, 'Find the bytes from my notes'),
+    found));
+
+  // the table so far
+  const mapped = h('ul', { class: 'list' });
+  for (const m of d.mappings) {
+    mapped.append(h('li', {}, h('b', {}, m.field), h('span', { class: 'mono fill' }, '← ' + m.expr),
+      h('button', { class: 'small ghost', onclick: () => { S.field = m.field; S.sel = []; setExpr(m.expr); } }, 'Show'),
+      h('button', { class: 'small ghost', onclick: () => { const n = design(); n.mappings = n.mappings.filter((x) => x.field !== m.field); saveDesign(n); } }, 'Remove')));
+  }
+  const text = (key, label, placeholder) => [h('label', {}, label), h('input', { style: 'width:100%', class: key.includes('expr') || key === 'only_when' ? 'mono' : '', value: d[key], placeholder, onchange: (e) => { const n = design(); n[key] = key === 'stale_after_ms' ? Number(e.target.value) || 3000 : e.target.value; saveDesign(n); } })];
+  right.append(h('div', { class: 'panel' },
+    h('h2', {}, 'The table so far'),
+    s.draft_edited ? h('p', { class: 'problem' }, 'The table text was edited by hand in Save: changing anything here rewrites it.') : null,
+    d.mappings.length ? mapped : h('p', { class: 'muted' }, 'Nothing mapped yet.'),
+    text('name', 'Device name', s.name),
+    text('id', 'Table id (file name)', 'made from the name'),
+    text('only_when', 'Only read packets when… (optional)', 'u8[2] == 0'),
+    h('div', { class: 'row' }, h('div', { class: 'fill' }, text('instance_expr', 'What tells two of these apart (optional)', 'u8[3]')), h('div', { style: 'width:130px' }, text('instance_label', 'Called', 'bike'))),
+    text('stale_after_ms', 'Silent after (ms)', '3000'),
+    text('provenance', 'Where this knowledge comes from', 'My own capture, compared with the device’s display.'),
+    text('verified_on', 'Device and firmware checked on', s.name),
+    h('div', { class: 'row', style: 'margin-top:12px' }, h('button', { onclick: () => setTab('live') }, 'Next: watch it live →'), h('button', { class: 'ghost', onclick: () => setTab('save') }, 'Check and save →')),
+  ));
+  return h('div', { class: 'cols' }, left, right);
+}
+
+function notesFor(key) {
+  if (!key || !S.capture) return [];
+  return S.capture.notes.filter((n) => n.values && key in n.values).map((n) => [n.t, n.values[key]]);
+}
+
+function drawChart(canvas, points, markers = []) {
+  const c = canvas.getContext('2d');
+  const css = getComputedStyle(document.body);
+  const W = canvas.width, H = canvas.height, pad = 46;
+  c.clearRect(0, 0, W, H);
+  c.font = '22px system-ui';
+  c.fillStyle = css.getPropertyValue('--muted');
+  if (!points.length) { c.fillText('Select a byte to see its values here.', pad, H / 2); return; }
+  const all = points.concat(markers);
+  let t0 = Math.min(...all.map((p) => p[0])), t1 = Math.max(...all.map((p) => p[0]));
+  let v0 = Math.min(...all.map((p) => p[1])), v1 = Math.max(...all.map((p) => p[1]));
+  if (t0 === t1) t1 = t0 + 1;
+  if (v0 === v1) { v1 = v0 + 1; v0 -= 1; }
+  const x = (t) => pad + ((t - t0) / (t1 - t0)) * (W - pad - 12);
+  const y = (v) => H - 30 - ((v - v0) / (v1 - v0)) * (H - 52);
+  c.fillText(String(+v1.toFixed(2)), 4, 26);
+  c.fillText(String(+v0.toFixed(2)), 4, H - 30);
+  c.fillText(secs(t0), pad, H - 4);
+  c.fillText(secs(t1), W - 70, H - 4);
+  c.strokeStyle = css.getPropertyValue('--accent');
+  c.lineWidth = 2.5;
+  c.beginPath();
+  points.forEach((p, i) => (i ? c.lineTo(x(p[0]), y(p[1])) : c.moveTo(x(p[0]), y(p[1]))));
+  c.stroke();
+  c.fillStyle = css.getPropertyValue('--bad');
+  for (const m of markers) { c.beginPath(); c.arc(x(m[0]), y(m[1]), 9, 0, Math.PI * 2); c.fill(); }
+}
+
+function newFieldDialog(similarShown) {
+  const dlg = $('#dialog');
+  const v = (id) => $('#nf-' + id, dlg).value;
+  const submit = guard(async (confirmNew) => {
+    const r = await api('/api/field', { key: v('key').trim(), name: v('name'), unit: v('unit'), type: v('type'), decimals: Number(v('decimals')) || 1, min: Number(v('min')), max: Number(v('max')), kind: v('kind'), description: v('description'), confirm_new: confirmNew });
+    if (r.similar) {
+      $('#nf-similar', dlg).replaceChildren(h('p', { class: 'problem' }, 'Fields like this already exist. Use one of them if it means the same thing:'),
+        h('ul', { class: 'list' }, r.similar.map((x) => h('li', {}, h('b', {}, x.key), h('span', { class: 'fill muted' }, `${x.name} ${x.unit ? '(' + x.unit + ')' : ''} — ${x.description || ''}`),
+          h('button', { class: 'small', onclick: () => { S.field = x.key; dlg.close(); render(); } }, 'Use this')))),
+        h('button', { onclick: () => submit(true) }, 'Mine is different: add it'));
+      return;
+    }
+    dlg.close();
+    await loadState();
+    S.field = r.key;
+    toast(`Field ${r.key} added to registry/fields (experimental)`);
+    render();
+  });
+  dlg.replaceChildren(
+    h('h2', { style: 'margin-top:0' }, 'A new field'),
+    h('p', { class: 'hint' }, 'Only for a measurement the registry has no field for. It starts as experimental.'),
+    h('div', { class: 'row' }, h('div', { class: 'fill' }, h('label', {}, 'Key (lower case, _)'), h('input', { id: 'nf-key', style: 'width:100%', placeholder: 'body_temperature' })),
+      h('div', { class: 'fill' }, h('label', {}, 'Name'), h('input', { id: 'nf-name', style: 'width:100%', placeholder: 'Body temperature' })),
+      h('div', { style: 'width:90px' }, h('label', {}, 'Unit'), h('input', { id: 'nf-unit', style: 'width:100%', placeholder: '°C' }))),
+    h('div', { class: 'row' },
+      h('div', {}, h('label', {}, 'Number'), h('select', { id: 'nf-type' }, h('option', { value: 'int' }, 'whole number'), h('option', { value: 'decimal' }, 'decimal'))),
+      h('div', { style: 'width:90px' }, h('label', {}, 'Decimals'), h('input', { id: 'nf-decimals', type: 'number', min: 1, max: 4, value: 1, style: 'width:100%' })),
+      h('div', { style: 'width:110px' }, h('label', {}, 'Lowest plausible'), h('input', { id: 'nf-min', type: 'number', value: 0, style: 'width:100%' })),
+      h('div', { style: 'width:110px' }, h('label', {}, 'Highest plausible'), h('input', { id: 'nf-max', type: 'number', value: 100, style: 'width:100%' })),
+      h('div', {}, h('label', {}, 'Kind'), h('select', { id: 'nf-kind' },
+        h('option', { value: 'instantaneous' }, 'the value right now'), h('option', { value: 'cumulative' }, 'a running total'), h('option', { value: 'event' }, 'one thing that happened'), h('option', { value: 'state' }, 'a setting or state')))),
+    h('label', {}, 'What it means, in a sentence'), h('input', { id: 'nf-description', style: 'width:100%', placeholder: 'Core body temperature right now, in degrees Celsius.' }),
+    h('div', { id: 'nf-similar', style: 'margin-top:10px' }),
+    h('div', { class: 'row', style: 'margin-top:14px; justify-content:flex-end' }, h('button', { class: 'ghost', onclick: () => dlg.close() }, 'Cancel'), h('button', { class: 'primary', onclick: () => submit(false) }, 'Add field')),
+  );
+  dlg.showModal();
+}
+
+// ───────────────────────── 4 Live ─────────────────────────
+
+function displayMode(key, kind) {
+  try { return localStorage.getItem('ofp-display-' + key) || (kind === 'instantaneous' ? 'number' : 'number'); } catch { return 'number'; }
+}
+function setDisplayMode(key, mode) { try { localStorage.setItem('ofp-display-' + key, mode); } catch { /* private window */ } renderTiles(); }
+
+const dialMax = {};
+function dial(value, f) {
+  const seen = Math.max(dialMax[f.key] || 0, value || 0);
+  dialMax[f.key] = seen;
+  // a round ceiling above what was seen, never beyond the field's plausible range
+  const steps = [10, 20, 50, 100, 150, 200, 300, 500, 1000, 2000, 5000, 10000, 100000];
+  const max = Math.min(f.max, steps.find((s) => s >= seen * 1.15) || f.max);
+  const frac = Math.max(0, Math.min(1, ((value || 0) - f.min) / (max - f.min || 1)));
+  const a = Math.PI * (1 - frac), r = 80, cx = 100, cy = 100;
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 200 118');
+  svg.innerHTML = `<path d="M20 100 A80 80 0 0 1 180 100" fill="none" stroke="var(--line)" stroke-width="12" stroke-linecap="round"/>
+    <path d="M20 100 A80 80 0 0 1 ${(cx + r * Math.cos(a)).toFixed(1)} ${(cy - r * Math.sin(a)).toFixed(1)}" fill="none" stroke="var(--accent)" stroke-width="12" stroke-linecap="round"/>
+    <text x="100" y="92" text-anchor="middle" font-size="34" font-weight="700" fill="currentColor">${fmt(value, f)}</text>
+    <text x="20" y="116" text-anchor="middle" font-size="10" fill="var(--muted)">${f.min}</text>
+    <text x="180" y="116" text-anchor="middle" font-size="10" fill="var(--muted)">${max}</text>`;
+  return svg;
+}
+
+function verdictOf(key) {
+  const c = S.capture && S.capture.confirms.filter((x) => x.field === key).pop();
+  if (!c) return h('span', { class: 'muted' }, 'not checked yet');
+  return c.ok ? h('span', { class: 'good' }, `✓ matches the display (${c.shown})`) : h('span', { class: 'bad' }, `✗ display showed ${c.console}, this showed ${c.shown}`);
+}
+
+function renderTiles() {
+  const box = $('#tiles');
+  if (!box) return;
+  const src = S.live.source;
+  if (!src) { box.replaceChildren(h('div', { class: 'empty' }, 'Waiting for the device… (wake it: pedal or press a button)')); return; }
+  // rebuild only when the set of fields changes, so typing in a box is never interrupted
+  const sig = src.fields.map((f) => f.key + displayMode(f.key)).join('|');
+  if (box.dataset.sig !== sig) {
+    box.dataset.sig = sig;
+    box.replaceChildren(...src.fields.map((f) => {
+      const input = h('input', { type: 'number', step: 'any', placeholder: 'display shows…', style: 'width:130px' });
+      const confirm = guard(async (console_) => { await api('/api/confirm', { field: f.key, console: console_ }); input.value = ''; });
+      return h('div', { class: 'tile', 'data-key': f.key },
+        h('div', { class: 'name' }, h('span', {}, f.name, f.unit ? h('span', { class: 'unit' }, ' ' + f.unit) : null),
+          h('select', { class: 'small', onchange: (e) => setDisplayMode(f.key, e.target.value) },
+            [['number', 'Big number'], ['dial', 'Dial'], ['text', 'Text']].map(([v, l]) => h('option', { value: v, selected: displayMode(f.key) === v }, l)))),
+        h('div', { class: 'show' }),
+        h('div', { class: 'verdict' }),
+        h('div', { class: 'row' }, h('button', { class: 'small', onclick: () => confirm(undefined) }, 'Matches the display'), input,
+          h('button', { class: 'small', onclick: () => { if (input.value !== '') confirm(Number(input.value)); } }, 'Save')));
+    }));
+  }
+  for (const tile of box.children) {
+    const f = src.fields.find((x) => x.key === tile.dataset.key);
+    const v = S.live.values[f.key];
+    const mode = displayMode(f.key);
+    tile.classList.toggle('silent', S.live.stale);
+    const show = tile.querySelector('.show');
+    if (mode === 'dial') show.replaceChildren(dial(v, f));
+    else show.replaceChildren(h('div', { class: 'value' + (mode === 'text' ? ' text' : '') }, fmt(v, f) + (mode === 'text' && f.unit ? ' ' + f.unit : '')));
+    tile.querySelector('.verdict').replaceChildren(verdictOf(f.key));
+  }
+}
+
+function viewLive() {
+  const s = session();
+  if (!s) return needSession('Choose a device first.');
+  const wrap = h('div', {});
+  const head = h('div', { class: 'panel' },
+    h('h2', {}, S.live.source ? S.live.source.name : 'Live values'),
+    h('p', { class: 'hint' }, s.draft ? 'Decoded with the table you are writing.' : 'Decoded with the registry’s table for this device (no table of your own yet).',
+      ' Compare each number with the device’s own display: “Matches”, or type what the display shows. Your answers are saved in the capture and the checks hold the table to them.'));
+  if (s.from_file) head.append(h('p', { class: 'problem' }, 'This is a capture file. Live values need the device: choose it in Devices.'));
+  else if (!s.recording) head.append(h('button', { class: 'primary', onclick: guard(async () => { await api('/api/record/start', {}); await loadState(); render(); }) }, 'Start (records while you confirm)'));
+  else head.append(h('div', { class: 'row' }, h('span', { class: 'dot rec' }), h('span', {}, 'Recording'), h('button', { class: 'small', onclick: guard(async () => { await api('/api/record/stop', {}); await reload(); }) }, 'Stop'),
+    h('button', { class: 'small ghost', onclick: () => setTab('save') }, 'Check and save →')));
+  wrap.append(head, h('div', { class: 'tiles', id: 'tiles' }));
+  setTimeout(renderTiles);
+  return wrap;
+}
+
+// ───────────────────────── 5 Save ─────────────────────────
+
+const runCheck = guard(async () => {
+  const r = await api('/api/table/check', { yaml: S.yaml });
+  S.checked = { ...r, yaml: S.yaml };
+  S.yamlDirty = false;
+  await loadState();
+  render();
+});
+
+function viewSave() {
+  const s = session();
+  if (!s) return needSession('Choose a device or open a capture first.');
+  const area = h('textarea', { spellcheck: 'false', oninput: (e) => { S.yaml = e.target.value; S.yamlDirty = true; } });
+  area.value = S.yaml;
+  const left = h('div', { class: 'panel' },
+    h('h2', {}, 'The table'),
+    h('p', { class: 'hint' }, 'Written from the Map step; you can edit it here. This is the file that goes into the registry.'),
+    area,
+    h('div', { class: 'row', style: 'margin-top:10px' },
+      h('button', { class: 'primary', onclick: runCheck }, 'Check'),
+      h('button', { class: 'ghost', onclick: () => saveDesign(design()) }, 'Rewrite from the Map step')));
+
+  const right = h('div', {});
+  const c = S.checked;
+  const result = h('div', { class: 'panel' }, h('h2', {}, 'Check'), h('p', { class: 'hint' }, 'The same judgement the automated checks make: this capture is replayed through the table and compared with your notes and confirmations.'));
+  if (!c) result.append(h('p', { class: 'muted' }, 'Not checked yet.'));
+  else {
+    result.append(h('p', {}, c.ok ? h('span', { class: 'badge good' }, 'passes') : h('span', { class: 'badge bad' }, c.compiled === false ? 'does not compile' : 'does not pass'), ' ', h('span', { class: 'muted' }, c.summary || '')));
+    for (const p of c.problems || []) result.append(h('div', { class: 'problem' }, p));
+    for (const [key, points] of Object.entries(c.series || {})) {
+      const mini = h('canvas', { class: 'mini', width: 900, height: 120 });
+      result.append(h('div', { class: 'row', style: 'margin-top:8px' }, h('b', {}, key), h('span', { class: 'muted' }, `${points.length} values · last ${points.length ? points[points.length - 1][1] : '–'}`)), mini);
+      setTimeout(() => drawMini(mini, points, notesFor(key)));
+    }
+  }
+  right.append(result);
+
+  const save = h('div', { class: 'panel' }, h('h2', {}, 'Save to the registry'),
+    h('p', { class: 'hint' }, 'Writes the table and this capture into registry/tables and runs the full check. Nothing is committed or pushed.'));
+  const doSave = guard(async (overwrite) => { S.saved = await api('/api/save', { yaml: S.yaml, overwrite }); render(); });
+  save.append(h('button', { class: 'primary', disabled: !(c && c.ok) || s.recording, onclick: () => doSave(false) }, 'Save'));
+  if (!(c && c.ok)) save.append(h('span', { class: 'muted' }, '  after a check that passes'));
+  if (S.saved) {
+    if (S.saved.ok) {
+      save.append(h('p', { class: 'good' }, `Saved: ${S.saved.table} and ${S.saved.capture}`), h('p', { class: 'muted' }, 'To propose it for the official registry:'), h('pre', {}, S.saved.next.join('\n')));
+    } else {
+      for (const p of S.saved.problems || []) save.append(h('div', { class: 'problem' }, p));
+      if (S.saved.exists) save.append(h('button', { class: 'danger', onclick: () => doSave(true) }, 'Replace the existing table'));
+    }
+  }
+  right.append(save);
+  return h('div', { class: 'cols' }, left, right);
+}
+
+function drawMini(canvas, points, markers) {
+  const c = canvas.getContext('2d');
+  const css = getComputedStyle(document.body);
+  c.clearRect(0, 0, canvas.width, canvas.height);
+  if (points.length < 2) return;
+  const all = points.concat(markers);
+  const t0 = points[0][0], t1 = points[points.length - 1][0] || 1;
+  let v0 = Math.min(...all.map((p) => p[1])), v1 = Math.max(...all.map((p) => p[1]));
+  if (v0 === v1) { v1 += 1; v0 -= 1; }
+  const x = (t) => ((t - t0) / (t1 - t0 || 1)) * canvas.width, y = (v) => canvas.height - 6 - ((v - v0) / (v1 - v0)) * (canvas.height - 12);
+  c.strokeStyle = css.getPropertyValue('--accent'); c.lineWidth = 2; c.beginPath();
+  points.forEach((p, i) => (i ? c.lineTo(x(p[0]), y(p[1])) : c.moveTo(x(p[0]), y(p[1])))); c.stroke();
+  c.fillStyle = css.getPropertyValue('--bad');
+  for (const m of markers) { c.beginPath(); c.arc(x(m[0]), y(m[1]), 6, 0, Math.PI * 2); c.fill(); }
+}
+
+// ───────────────────────── assistant ─────────────────────────
+
+function assistantDialog() {
+  const dlg = $('#dialog');
+  const prompt = `OFP Studio is running at ${location.origin} and I have it open. Help me add a device to the Open Fitness Protocol registry.
+
+1. Read the rules first: GET ${location.origin}/api/guide
+2. See where we are: GET /api/state (fields, tables, the session) and GET /api/capture (packets, my notes, my confirmations). GET /api/similar says whether the registry already knows this device: if it does, extend that table.
+3. Find the bytes: POST /api/solve {} ranks readings against my notes; POST /api/series {"expr":"u16le[4] / 10"} gives one reading over the capture.
+4. Set the table: POST /api/table/design {"name":…,"mappings":[{"field":"power","expr":"u16le[8]"}],"only_when":…,"instance_expr":…,"instance_label":…} — or POST /api/table/check {"yaml":…} with the full text. Both show up in my page as you do them.
+5. POST /api/table/check tells you whether the capture passes. Do not call /api/save: I will press Save.
+
+The notes and confirmations are mine to give: they are what I read on the device. Ask me to record or note something when you need it. POST bodies are JSON.`;
+  dlg.replaceChildren(
+    h('h2', { style: 'margin-top:0' }, 'Work with an assistant'),
+    h('p', { class: 'hint' }, 'This page and an AI assistant can work on the same session: what it finds or changes appears here as it happens, and you stay the one who reads the device and presses Save. Paste this into Claude Code (or any assistant that can call a local address):'),
+    h('pre', {}, prompt),
+    h('div', { class: 'row', style: 'justify-content:flex-end' },
+      h('button', { class: 'ghost', onclick: () => dlg.close() }, 'Close'),
+      h('button', { class: 'primary', onclick: async () => { try { await navigator.clipboard.writeText(prompt); toast('Copied'); } catch { toast('Select the text and copy it', true); } } }, 'Copy')));
+  dlg.showModal();
+}
+
+// ───────────────────────── start ─────────────────────────
+
+document.querySelectorAll('#tabs button').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab)));
+$('#assistant-open').addEventListener('click', assistantDialog);
+reload().then(() => { if (session()) setTab(session().from_file ? 'map' : 'record'); connectEvents(); }).catch((e) => toast(e.message, true));

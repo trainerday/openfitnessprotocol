@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/ofp-core", "crates/ofp-ffi", "crates/ofp-capture", "crates/ofp-registry", "crates/ofp-cli"]
+members = ["crates/ofp-core", "crates/ofp-ffi", "crates/ofp-capture", "crates/ofp-registry", "crates/ofp-studio", "crates/ofp-cli"]
 
 [workspace.package]
 version = "0.1.0"

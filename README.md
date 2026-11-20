@@ -156,6 +156,53 @@ flowchart TB
 
 The same core runs in both, so a table behaves the same everywhere.
 
+## Add your own device: a vibecoder-first project
+
+**You own a device no app supports? You can add it yourself, with an AI assistant doing the
+technical part.** You do not need to know Bluetooth or how to program. You need the device, a
+computer, and Claude Code (or another assistant that can run commands). Not a vibecoder yourself?
+Find a friend who is and sit down together for a quarter of an hour.
+
+What you do is the part only a person can do: **use the device and say what its own display
+shows.** The assistant does the rest, and a real recording of your device is the judge of whether
+it got it right.
+
+### What to tell your assistant
+
+Clone this repo, open it in your assistant, and paste this:
+
+```text
+I want to add my <device name> to the Open Fitness Protocol registry. Work in this repo.
+
+1. Read AGENTS.md first and follow it exactly. It has the rules for what may be added.
+2. Build the tool (cargo build --release) and start the Studio: target/release/ofp studio
+   Tell me when the page is open. I will do everything in that page that needs the device.
+3. Ask me to pick my device in the page and press Record. Then ask me to use the device at two or
+   three different efforts and to type what its own display shows each time (for example
+   power=150 cadence=82). Do not invent these numbers: they come from me.
+4. Check whether the registry already knows this device (GET /api/similar). If it does, extend
+   that table. Only add a new one if nothing decodes the device.
+5. Find which bytes are which (POST /api/solve, POST /api/series), reuse the fields in
+   registry/fields, and write the table (POST /api/table/design). Add a new field only for a
+   measurement that has none.
+6. Check it (POST /api/table/check). Explain in plain words anything that does not pass.
+7. Ask me to open the Live step and confirm each number against the device's display.
+8. When everything passes, I press Save. Then run `ofp check`, and prepare a pull request with
+   the table and the capture, signed off (git commit -s). Say in the pull request that an AI
+   assistant helped.
+```
+
+The rules the assistant follows are in [AGENTS.md](AGENTS.md); the Studio serves the same text to
+it. The checks decide the same way for everyone: if the recording decodes to the numbers you
+noted and confirmed, it is right, whoever or whatever typed the table.
+
+### Where your device then works
+
+In every app that includes OFP, with no change to that app. Today that is an unreleased branch of
+the TrainerDay desktop app; the project is new. Devices that send their numbers in their Bluetooth
+broadcast work now. Devices you have to connect to can be recorded and explored in the Studio
+today; saving a table for them needs a reader the core does not have yet.
+
 ## Contributing
 
 We want contributors, and we want it to be easy. You do not need to be a Bluetooth expert.
@@ -192,12 +239,15 @@ they use also supports Windows and Linux.
 
 ```bash
 cargo build --release          # the command is target/release/ofp
+ofp studio                     # the page: record, find the bytes, confirm, save
 ofp check                      # what every pull request must pass
 ofp scan                       # devices in range, with how often each one is heard
 ofp live                       # decoded values of a device a table knows, as large numbers
 ```
 
-### Add a device
+### Add a device by hand
+
+The Studio (`ofp studio`) does these steps in a page. The same from the terminal:
 
 1. **Scan.** `ofp scan` lists what is in range. Note your device's name.
 2. **Record, with notes.** `ofp record "<name>"` saves everything the device sends into a capture

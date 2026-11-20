@@ -1,0 +1,22 @@
+[package]
+name = "ofp-studio"
+description = "OFP Studio: a local web page for adding a device (record, find the bytes, confirm, save a table)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+# The radio. Without it the Studio only opens capture files.
+ble = ["ofp-capture/ble"]
+
+[dependencies]
+ofp-core = { path = "../ofp-core" }
+ofp-capture = { path = "../ofp-capture" }
+ofp-registry = { path = "../ofp-registry" }
+serde = { workspace = true, features = ["std"] }
+serde_json = { workspace = true, features = ["std"] }
+axum = "0.8.9"
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "signal"] }
+tokio-stream = { version = "0.1.19", features = ["sync"] }
+futures = "0.3.34"

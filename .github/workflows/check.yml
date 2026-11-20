@@ -16,7 +16,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       # Everything except the Bluetooth commands, which need a radio.
       - name: Tests
-        run: cargo test -p ofp-core -p ofp-ffi -p ofp-capture && cargo test -p ofp-cli --no-default-features
+        run: cargo test -p ofp-core -p ofp-ffi -p ofp-capture -p ofp-registry -p ofp-studio && cargo test -p ofp-cli --no-default-features
       - name: The core builds for a microcontroller (no_std)
         run: cargo build -p ofp-core --target thumbv7em-none-eabihf
       - name: Registry check (fields, tables, vectors, captures)
