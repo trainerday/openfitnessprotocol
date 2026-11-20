@@ -1148,6 +1148,23 @@ const disconnect = guard(async () => {
   toast('Disconnected.');
 });
 
+/** A small copy-to-clipboard button for a code. */
+function copyButton(text) {
+  const b = h('button', { class: 'copy', title: 'Copy ' + text, 'aria-label': 'Copy ' + text, onclick: async (e) => {
+    e.stopPropagation();
+    try { await navigator.clipboard.writeText(text); } catch {
+      // older webviews: copy through a selection
+      const t = h('textarea', { style: 'position:fixed;opacity:0' }, text);
+      document.body.append(t); t.select(); document.execCommand('copy'); t.remove();
+    }
+    b.classList.add('done');
+    toast('Copied ' + text);
+    setTimeout(() => b.classList.remove('done'), 1500);
+  } });
+  b.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" fill="none" stroke="currentColor" stroke-width="2"/></svg>';
+  return b;
+}
+
 /** My recordings: every session, newest first, sent or not. */
 function showRecordings() {
   simpleView = 'recordings';
@@ -1206,7 +1223,7 @@ function viewMyRecordings() {
       h('div', { class: 'rec-what' }, h('b', {}, d.device), h('span', { class: 'muted' }, d.when + (c.kb ? ` · ${c.kb} KB` : ''))),
       h('div', { class: 'row rec-actions' },
         h('a', { class: 'btn small', href: '/api/captures/download?name=' + encodeURIComponent(c.name), download: c.name, onclick: () => toast('Saved to your Downloads folder') }, 'Download'),
-        code ? h('span', { class: 'rec-sent' }, '✓ Sent · ', h('span', { class: 'mono' }, code)) : button));
+        code ? h('span', { class: 'rec-sent' }, '✓ Sent · ', h('span', { class: 'mono' }, code), copyButton(code)) : button));
   });
   return h('div', { class: 'simple-page' },
     h('div', { class: 'row', style: 'justify-content:space-between; align-items:baseline' },
@@ -1431,7 +1448,7 @@ function viewSent() {
     h('div', { class: 'steps' }, h('span', { class: 'done' }, '1 Connect'), h('span', { class: 'done' }, '2 Check your numbers'), h('span', { class: 'done' }, '3 Send')),
     h('h1', {}, 'Thank you'),
     h('p', { class: 'lead' }, 'Your recording is with us. Its code is'),
-    h('div', { class: 'code' }, S.sent.code),
+    h('div', { class: 'code-row' }, h('div', { class: 'code' }, S.sent.code), copyButton(S.sent.code)),
     h('p', {}, 'Keep the code: it is how we find your recording. If you want to follow along, ', h('a', { href: issue, target: '_blank', rel: 'noopener' }, 'open an issue on GitHub'), ' with the code in it. Someone (or an AI assistant) can now work out your device from what it sent, and you get it in a later version of OFP Studio.'),
     S.sent.works ? tellYourApps(S.sent.name) : null,
     h('div', { class: 'row' }, h('button', { class: 'connect', onclick: chooseAnother }, 'Connect another device'), h('button', { class: 'linkish', onclick: showRecordings }, 'See my recordings')));
