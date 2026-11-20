@@ -281,6 +281,8 @@ language in the [design document](docs/design.md#the-table-language).
 ## Read more
 
 - [Design document](docs/design.md): the full design, what comes later, and the open questions.
+- [OFP Studio](docs/studio.md): the page for adding and testing a device, and its API.
+- [AGENTS.md](AGENTS.md): the rules for adding to the registry, for people and AI assistants.
 - [Capture format](docs/capture-format.md): the file a recording is saved in.
 - [`crates/ofp-ffi`](crates/ofp-ffi/src/lib.rs): the five functions an app calls.
 

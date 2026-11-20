@@ -44,6 +44,8 @@ pub enum PacketKind {
     Notify,
     /// A value read from a characteristic.
     Read,
+    /// Bytes the tool wrote to a characteristic (the Studio's tester: a trainer command).
+    Write,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]

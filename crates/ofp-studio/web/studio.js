@@ -7,7 +7,8 @@ const S = {
   state: null,        // GET /api/state
   devices: [],
   captures: [],
-  capture: null,      // { packets: [[t, stream, hex]], notes, confirms }
+  capture: null,      // { packets: [[t, stream, hex]], notes, confirms, io }
+  header: null,       // the capture's first line (device, services found after connecting)
   stream: null,
   sel: [],            // selected byte positions (Map step)
   expr: '',
@@ -82,9 +83,11 @@ async function loadState() {
 }
 
 async function loadCapture() {
-  if (!session()) { S.capture = null; S.similar = null; return; }
+  if (!session()) { S.capture = null; S.header = null; S.similar = null; Tester.rebuild(null); return; }
   const c = await api('/api/capture');
-  S.capture = { packets: c.packets, notes: c.notes, confirms: c.confirms };
+  S.capture = { packets: c.packets, notes: c.notes, confirms: c.confirms, io: c.io };
+  S.header = c.header;
+  Tester.rebuild(S.capture);
   S.similar = c.packets.length ? await api('/api/similar').catch(() => null) : null;
 }
 
@@ -117,8 +120,10 @@ function connectEvents() {
       case 'devices': S.devices = m.devices; if (S.tab === 'devices') renderDevicesTable(); break;
       case 'packet':
         if (S.capture) S.capture.packets.push([m.t, m.stream, m.hex]);
+        if (m.stream !== 'adv') Tester.onPacket(m.t, m.stream, m.hex);
         if (!S.stream) { S.stream = m.stream; render(); } else renderSoon();
         break;
+      case 'tx': Tester.onTx(m); if (m.error) toast(m.error, true); renderSoon(); break;
       case 'note': if (S.capture) S.capture.notes.push(m); render(); break;
       case 'confirm': if (S.capture) S.capture.confirms.push(m); renderSoon(); if (S.tab === 'live') render(); break;
       case 'source': S.live.source = m.source; if (S.tab === 'live') render(); break;
@@ -170,7 +175,7 @@ function render() {
   renderChip();
   renderBanner();
   const main = $('#main');
-  const view = { devices: viewDevices, record: viewRecord, map: viewMap, live: viewLive, save: viewSave }[S.tab]();
+  const view = { devices: viewDevices, record: viewRecord, map: viewMap, live: viewLive, save: viewSave, tester: viewTester }[S.tab]();
   main.replaceChildren(view);
   renderLive();
 }
@@ -180,6 +185,7 @@ function renderLive() {
   for (const el of document.querySelectorAll('[data-grid]')) fillGrid(el);
   const st = $('#rec-stats');
   if (st) fillStats(st);
+  if (S.tab === 'tester') renderTester();
 }
 
 function needSession(title) {
@@ -697,6 +703,93 @@ function drawMini(canvas, points, markers) {
   points.forEach((p, i) => (i ? c.lineTo(x(p[0]), y(p[1])) : c.moveTo(x(p[0]), y(p[1])))); c.stroke();
   c.fillStyle = css.getPropertyValue('--bad');
   for (const m of markers) { c.beginPath(); c.arc(x(m[0]), y(m[1]), 6, 0, Math.PI * 2); c.fill(); }
+}
+
+// ───────────────────────── Tester ─────────────────────────
+
+const testerNow = () => { const p = S.capture && S.capture.packets; return p && p.length ? p[p.length - 1][0] : 0; };
+const writeChr = guard(async (chr, bytes) => { await api('/api/write', { chr, hex: Tester.toHex(bytes) }); });
+
+function viewTester() {
+  const s = session();
+  if (!s) return needSession('Choose the device to test first.');
+  const gatt = Tester.gattOf(S.header);
+  const connected = s.recording && s.connect;
+  const wrap = h('div', {});
+  const connect = connected
+    ? h('button', { class: 'danger', onclick: guard(async () => { await api('/api/record/stop', {}); await reload(); }) }, 'Disconnect')
+    : h('button', { class: 'primary', disabled: s.from_file || s.recording, onclick: guard(async () => { await api('/api/record/start', { connect: true }); await loadState(); render(); toast('Connecting…'); }) }, 'Connect');
+  wrap.append(h('div', { class: 'panel' },
+    h('h2', {}, 'Test ' + s.name),
+    h('p', { class: 'hint' }, 'Connects the way an app would and shows what the device says in the standard Bluetooth profiles, with a log and a report for troubleshooting. Everything is recorded into the capture.',
+      s.from_file ? ' This is a capture file: the readings below are replayed from it.' : ''),
+    h('div', { class: 'row' }, connect,
+      h('button', { onclick: () => downloadText(`${s.name.replace(/[^a-z0-9]+/gi, '-')}-report.txt`, Tester.report(s, S.header, testerNow())) }, 'Download report'),
+      h('span', { class: 'muted' }, connected ? 'connected' : S.radio === 'connecting' ? 'connecting…' : 'not connected')),
+    h('div', { id: 'tester-findings', style: 'margin-top:12px' })));
+
+  const matrix = h('table', { id: 'tester-matrix' });
+  const left = h('div', {}, h('div', { class: 'panel' }, h('h2', {}, 'Live values, by where they come from'),
+    h('p', { class: 'hint' }, 'The same number can arrive in more than one service. An app picks one; if they disagree, that explains “my watts are different in another app”.'),
+    h('div', { class: 'scroll' }, matrix)));
+
+  if (Tester.hasChr(gatt, '2ad9')) {
+    const num = (id, value, step) => h('input', { id, type: 'number', value, step, style: 'width:90px' });
+    const val = (id) => Number($('#' + id).value);
+    left.append(h('div', { class: 'panel' }, h('h2', {}, 'Control the trainer'),
+      h('p', { class: 'hint' }, 'FTMS control point. Ask for control first; only one app can hold it.'),
+      h('div', { class: 'row' },
+        h('button', { disabled: !connected, onclick: () => writeChr('2ad9', Tester.commands.requestControl()) }, 'Request control'),
+        h('button', { disabled: !connected, onclick: () => writeChr('2ad9', Tester.commands.start()) }, 'Start'),
+        h('button', { disabled: !connected, onclick: () => writeChr('2ad9', Tester.commands.pause()) }, 'Pause'),
+        h('button', { disabled: !connected, onclick: () => writeChr('2ad9', Tester.commands.stop()) }, 'Stop')),
+      h('div', { class: 'row', style: 'margin-top:10px' }, num('t-power', 200, 5), 'W', h('button', { disabled: !connected, onclick: () => writeChr('2ad9', Tester.commands.power(val('t-power'))) }, 'Set power (ERG)'),
+        num('t-slope', 0, 0.5), '%', h('button', { disabled: !connected, onclick: () => writeChr('2ad9', Tester.commands.slope(val('t-slope'))) }, 'Set slope'),
+        num('t-res', 10, 1), h('button', { disabled: !connected, onclick: () => writeChr('2ad9', Tester.commands.resistance(val('t-res'))) }, 'Set resistance')),
+      h('p', { id: 'tester-control', class: 'muted', style: 'margin:10px 0 0' })));
+  }
+
+  const services = h('div', {});
+  if (!gatt.length) services.append(h('p', { class: 'muted' }, 'Connect to list them.'));
+  for (const sv of gatt) {
+    services.append(h('h3', {}, `${Tester.SERVICE_NAMES[sv.uuid] || 'Unknown service'} · ${sv.uuid}`));
+    services.append(h('ul', { class: 'list' }, sv.characteristics.map((c) => h('li', {}, h('span', { class: 'mono' }, c.uuid.length > 8 ? c.uuid.slice(0, 13) + '…' : c.uuid), h('span', { class: 'fill' }, Tester.CHAR_NAMES[c.uuid] || ''), h('span', { class: 'muted' }, c.properties.join(', '))))));
+  }
+  const right = h('div', {}, h('div', { class: 'panel' }, h('h2', {}, 'Services and characteristics'), services));
+
+  wrap.append(h('div', { class: 'cols' }, left, right));
+  wrap.append(h('div', { class: 'panel' }, h('h2', {}, 'Log'), h('p', { class: 'hint' }, 'Newest at the bottom: time, direction, characteristic, bytes, and what they mean where a standard says so.'),
+    h('pre', { id: 'tester-log', style: 'max-height:340px; overflow:auto; white-space:pre' })));
+  return wrap;
+}
+
+function renderTester() {
+  const T = Tester.state();
+  const s = session();
+  const box = $('#tester-findings');
+  if (!box || !s) return;
+  const found = Tester.findings(S.header, s.recording && s.connect, testerNow());
+  box.replaceChildren(...found.map((f) => h('div', { class: f.level === 'bad' ? 'problem' : f.level === 'good' ? 'good' : '', style: 'padding:3px 0' }, (f.level === 'bad' ? '✗ ' : f.level === 'good' ? '✓ ' : '• ') + f.text)));
+  const cols = [['FTMS', 'FTMS'], ['CPS', 'Cycling Power'], ['CSC', 'Speed & Cadence'], ['HR', 'Heart Rate']];
+  const rows = [['power', 'Power', 'W', 0], ['cadence', 'Cadence', 'rpm', 0], ['speed', 'Speed', 'km/h', 1], ['heartRate', 'Heart rate', 'bpm', 0], ['resistance', 'Resistance', '', 0]];
+  const now = testerNow();
+  $('#tester-matrix').replaceChildren(
+    h('tr', {}, h('th', {}, ''), cols.map(([, label]) => h('th', { class: 'num' }, label))),
+    ...rows.map(([key, label, unit, digits]) => h('tr', {}, h('td', {}, label, unit ? h('span', { class: 'muted' }, ' ' + unit) : null),
+      cols.map(([c]) => { const v = T.src[c][key]; const old = T.src[c].at !== undefined && now - T.src[c].at > 4000; return h('td', { class: 'num' + (old ? ' muted' : ''), style: 'font-size:20px; font-weight:600' }, v === undefined ? '–' : Number(v).toFixed(digits)); }))));
+  const ctl = $('#tester-control');
+  if (ctl) ctl.textContent = (T.control.granted ? 'Control granted. ' : 'No control yet. ') + (T.control.last ? 'Last answer: ' + T.control.last : '');
+  const logEl = $('#tester-log');
+  const stick = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 30;
+  logEl.textContent = T.log.slice(-250).map((l) => `${(l.t / 1000).toFixed(1).padStart(8)}  ${l.dir.toUpperCase().padEnd(4)} ${l.chr.padEnd(6)} ${l.hex}${l.text ? '   ' + l.text : ''}`).join('\n') || 'Nothing yet.';
+  if (stick) logEl.scrollTop = logEl.scrollHeight;
+}
+
+function downloadText(name, text) {
+  const a = h('a', { href: URL.createObjectURL(new Blob([text], { type: 'text/plain' })), download: name });
+  document.body.append(a);
+  a.click();
+  a.remove();
 }
 
 // ───────────────────────── assistant ─────────────────────────

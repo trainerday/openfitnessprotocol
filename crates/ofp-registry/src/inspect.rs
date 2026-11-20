@@ -31,6 +31,7 @@ pub fn inspect(lines: &[Line]) -> String {
                 PacketKind::Adv => ("advertisements (manufacturer data)".to_string(), mfr.as_deref()),
                 PacketKind::Notify => (format!("notify {}", chr.as_deref().unwrap_or("?")), data.as_deref()),
                 PacketKind::Read => (format!("read {}", chr.as_deref().unwrap_or("?")), data.as_deref()),
+                PacketKind::Write => (format!("write {}", chr.as_deref().unwrap_or("?")), data.as_deref()),
             };
             if let Some(bytes) = hex.and_then(|h| unhex(h).ok()) {
                 streams.entry(key).or_default().push((*t, bytes));

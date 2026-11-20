@@ -477,8 +477,13 @@ impl Studio {
         let strip = if s.company_id().is_some() { 2 } else { 0 };
         let mut packets = Vec::new();
         let (mut notes, mut confirms) = (Vec::new(), Vec::new());
+        // what was read once after connecting, and what the tester wrote: [t, "read" | "write", characteristic, hex]
+        let mut io = Vec::new();
         for l in &s.lines {
             match l {
+                Line::Packet { t, kind: kind @ (PacketKind::Read | PacketKind::Write), chr: Some(c), data: Some(d), .. } => {
+                    io.push(json!([t, if *kind == PacketKind::Read { "read" } else { "write" }, c, d]));
+                }
                 Line::Note { .. } => notes.push(serde_json::to_value(l).unwrap_or_default()),
                 Line::Confirm { .. } => confirms.push(serde_json::to_value(l).unwrap_or_default()),
                 _ => {
@@ -496,6 +501,7 @@ impl Studio {
             "packets": packets[skipped..],
             "notes": notes,
             "confirms": confirms,
+            "io": io,
         }))
     }
 
@@ -916,6 +922,26 @@ impl Studio {
         let _ = s.append(Line::Packet { t, kind: PacketKind::Notify, name: None, rssi: None, mfr: None, service_data: BTreeMap::new(), chr: Some(chr.to_string()), data: Some(hex(value)) });
         drop(st);
         self.emit(json!({ "type": "packet", "t": t, "stream": chr, "hex": hex(value) }));
+    }
+
+    /// Whether a write may go out now: only to a device this session is connected to.
+    pub fn can_write(&self) -> Result<(), String> {
+        match self.state.lock().unwrap().session.as_ref() {
+            Some(s) if s.recording && s.connect => Ok(()),
+            _ => Err("Connect to the device first (Tester → Connect).".into()),
+        }
+    }
+
+    /// Bytes were written to the device (or the write failed): it goes into the capture and the log.
+    pub fn on_write(&self, chr: &str, value: &[u8], error: Option<String>) {
+        let mut st = self.state.lock().unwrap();
+        let Some(s) = st.session.as_mut() else { return };
+        let t = s.now();
+        if error.is_none() {
+            let _ = s.append(Line::Packet { t, kind: PacketKind::Write, name: None, rssi: None, mfr: None, service_data: BTreeMap::new(), chr: Some(chr.to_string()), data: Some(hex(value)) });
+        }
+        drop(st);
+        self.emit(json!({ "type": "tx", "t": t, "chr": chr, "hex": hex(value), "error": error }));
     }
 
     /// Once a second: silence is noticed here, and the device list goes out.

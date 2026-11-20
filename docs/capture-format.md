@@ -47,10 +47,10 @@ A notification, or a value read once after connecting:
 
 | Key | Meaning |
 |---|---|
-| `kind` | `adv`, `notify` or `read` |
+| `kind` | `adv`, `notify`, `read`, or `write` (bytes the Studio's tester sent to the device, such as a trainer command) |
 | `mfr` | Advertisement: manufacturer data in hex, the 2-byte company id first |
 | `service_data` | Advertisement: service UUID → hex |
-| `chr`, `data` | Notify / read: the characteristic UUID and the bytes in hex |
+| `chr`, `data` | Notify / read / write: the characteristic UUID and the bytes in hex |
 | `name`, `rssi` | As heard |
 
 Standard 16-bit UUIDs are written short (`2a37`), others in full.

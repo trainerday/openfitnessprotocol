@@ -157,7 +157,7 @@ pub struct Connection {
 }
 
 /// Connect, list services and characteristics, read what is readable, subscribe to everything that
-/// notifies. The tool never writes to the device.
+/// notifies. Nothing is written to the device here; [`write`] does that, only when asked.
 pub async fn connect(peripheral: Peripheral) -> Result<Connection, String> {
     peripheral.connect().await.map_err(err("could not connect"))?;
     peripheral.discover_services().await.map_err(err("could not list the services"))?;
@@ -185,4 +185,23 @@ pub async fn connect(peripheral: Peripheral) -> Result<Connection, String> {
 
 pub async fn disconnect(peripheral: &Peripheral) {
     let _ = peripheral.disconnect().await;
+}
+
+/// Write bytes to one characteristic (by short or full UUID). With a response when the characteristic
+/// supports it, unless `with_response` says otherwise.
+pub async fn write(peripheral: &Peripheral, chr: &str, data: &[u8], with_response: Option<bool>) -> Result<(), String> {
+    use btleplug::api::WriteType;
+    let c = peripheral.characteristics().into_iter().find(|c| short_uuid(&c.uuid) == chr || c.uuid.to_string() == chr).ok_or_else(|| format!("the device has no characteristic {chr}"))?;
+    let can_respond = c.properties.contains(CharPropFlags::WRITE);
+    let can_fire = c.properties.contains(CharPropFlags::WRITE_WITHOUT_RESPONSE);
+    if !can_respond && !can_fire {
+        return Err(format!("characteristic {chr} cannot be written"));
+    }
+    let kind = match with_response {
+        Some(true) if can_respond => WriteType::WithResponse,
+        Some(false) if can_fire => WriteType::WithoutResponse,
+        _ if can_respond => WriteType::WithResponse,
+        _ => WriteType::WithoutResponse,
+    };
+    peripheral.write(&c, data, kind).await.map_err(err("write failed"))
 }

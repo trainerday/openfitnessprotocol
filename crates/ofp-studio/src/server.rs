@@ -20,12 +20,15 @@ use tokio_stream::wrappers::BroadcastStream;
 const INDEX: &str = include_str!("../web/index.html");
 const CSS: &str = include_str!("../web/studio.css");
 const JS: &str = include_str!("../web/studio.js");
+const TESTER_JS: &str = include_str!("../web/tester.js");
 /// The rules for adding to the registry, as an LLM or a person should read them.
 const GUIDE: &str = include_str!("../../../AGENTS.md");
 
 pub enum Radio {
     Connect(String),
     Disconnect,
+    /// characteristic, bytes, with a response (None = whatever the characteristic supports)
+    Write(String, Vec<u8>, Option<bool>),
 }
 
 #[derive(Clone)]
@@ -82,6 +85,14 @@ struct YamlReq {
 }
 
 #[derive(Deserialize)]
+struct WriteReq {
+    chr: String,
+    hex: String,
+    #[serde(default)]
+    response: Option<bool>,
+}
+
+#[derive(Deserialize)]
 struct ConfirmReq {
     field: String,
     #[serde(default)]
@@ -103,6 +114,7 @@ pub fn router(studio: Arc<Studio>, radio: mpsc::UnboundedSender<Radio>, has_radi
         .route("/", get(|| async { text("text/html; charset=utf-8", INDEX) }))
         .route("/studio.css", get(|| async { text("text/css; charset=utf-8", CSS) }))
         .route("/studio.js", get(|| async { text("text/javascript; charset=utf-8", JS) }))
+        .route("/tester.js", get(|| async { text("text/javascript; charset=utf-8", TESTER_JS) }))
         .route("/api/guide", get(|| async { text("text/markdown; charset=utf-8", GUIDE) }))
         .route("/api/events", get(events))
         .route("/api/state", get(|State(a): State<App>| async move { Json(a.studio.state_json()) }))
@@ -149,6 +161,15 @@ pub fn router(studio: Arc<Studio>, radio: mpsc::UnboundedSender<Radio>, has_radi
         .route("/api/table/check", post(|State(a): State<App>, Json(r): Json<YamlReq>| async move { reply(a.studio.check_table(&r.yaml)) }))
         .route("/api/field", post(|State(a): State<App>, Json(r): Json<FieldReq>| async move { reply(a.studio.add_field(r)) }))
         .route("/api/confirm", post(|State(a): State<App>, Json(r): Json<ConfirmReq>| async move { reply(a.studio.confirm(&r.field, r.console)) }))
+        .route(
+            "/api/write",
+            post(|State(a): State<App>, Json(r): Json<WriteReq>| async move {
+                reply(a.studio.can_write().and_then(|_| ofp_capture::unhex(&r.hex)).map(|bytes| {
+                    let _ = a.radio.send(Radio::Write(r.chr, bytes, r.response));
+                    json!({ "sent": true })
+                }))
+            }),
+        )
         .route("/api/save", post(|State(a): State<App>, Json(r): Json<YamlReq>| async move { reply(a.studio.save(&r.yaml, r.overwrite)) }))
         .with_state(app)
 }
@@ -177,6 +198,7 @@ async fn radio_task(studio: Arc<Studio>, mut commands: mpsc::UnboundedReceiver<R
                 cmd = commands.recv() => match cmd {
                     Some(Radio::Connect(id)) => break Some(id),
                     Some(Radio::Disconnect) => {}
+                    Some(Radio::Write(chr, bytes, _)) => studio.on_write(&chr, &bytes, Some("not connected".into())),
                     None => return,
                 },
             }
@@ -215,6 +237,10 @@ async fn radio_task(studio: Arc<Studio>, mut commands: mpsc::UnboundedReceiver<R
                         cmd = commands.recv() => match cmd {
                             Some(Radio::Disconnect) | None => break,
                             Some(Radio::Connect(_)) => {}
+                            Some(Radio::Write(chr, bytes, response)) => {
+                                let result = ble::write(&c.peripheral, &chr, &bytes, response).await;
+                                studio.on_write(&chr, &bytes, result.err());
+                            }
                         },
                         _ = tokio::time::sleep(Duration::from_millis(500)) => {
                             if !studio.is_recording_connected() {
