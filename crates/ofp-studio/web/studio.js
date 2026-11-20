@@ -1081,7 +1081,7 @@ We are done when every value my device sends is on the Live step, I have marked 
 // ───────────────────────── version, and a newer release ─────────────────────────
 
 /** Where releases are published. `?updates=<url>` points the check elsewhere (for testing the banner). */
-const RELEASES = new URLSearchParams(location.search).get('updates') || 'https://openfitnessprotocol.com/download/latest.json';
+const RELEASES = new URLSearchParams(location.search).get('updates') || 'https://openfitnessprotocol.org/download/latest.json';
 
 /** 1 when a is newer than b ("0.10.0" > "0.9.3"), -1 when older, 0 when the same. */
 function compareVersions(a, b) {

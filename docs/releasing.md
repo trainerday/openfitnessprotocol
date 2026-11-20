@@ -14,8 +14,8 @@ the release copies it into `packages/ofp-js/package.json`. The table format has 
 | The notes | `CHANGELOG.md`. Notes for the next release go under `## Next` |
 | The version history | `site/releases.json` (committed: version, date, and for each platform the URL, size, SHA-256) |
 | The site | `site/`: `build.mjs` makes the pages from the two files above, `worker.js` serves them, `deploy.sh` deploys. Cloudflare Worker `ofp-site` |
-| The downloads | Cloudflare R2 bucket `ofp-releases`, served at `openfitnessprotocol.com/download/…` |
-| What a running Studio checks | `openfitnessprotocol.com/download/latest.json`. A newer version shows a banner with a Download button |
+| The downloads | Cloudflare R2 bucket `ofp-releases`, served at `openfitnessprotocol.org/download/…` |
+| What a running Studio checks | `openfitnessprotocol.org/download/latest.json`. A newer version shows a banner with a Download button |
 
 ```
 download/mac/OFP-Studio-<version>-mac.dmg                    every version, kept
@@ -25,7 +25,7 @@ download/windows/OFP-Studio-latest-windows-setup.exe
 download/latest.json                                         written last
 ```
 
-`openfitnessprotocol.org` and both `www.` names redirect to `openfitnessprotocol.com`.
+`openfitnessprotocol.com` and both `www.` names redirect to `openfitnessprotocol.org`.
 
 ## The notes
 

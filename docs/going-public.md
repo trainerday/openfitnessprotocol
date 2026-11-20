@@ -20,7 +20,7 @@ switch, and what to set on GitHub right after it.
 
 ## Look at these before the switch
 
-- **The site** `openfitnessprotocol.com` is live since 2026-11-20 (`.org` and `www.` redirect to it): the
+- **The site** `openfitnessprotocol.org` is live since 2026-11-20 (`.com` and `www.` redirect to it): the
   pages and the downloads (`docs/releasing.md`). Its links to GitHub open once the repository is public.
 
 - **Who can write.** Today six accounts can push: three admins and three with write access. After the

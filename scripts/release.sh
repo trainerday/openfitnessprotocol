@@ -19,7 +19,7 @@ cd "$(dirname "$0")/.."
 ROOT=$(pwd)
 # The maintainers' settings on this computer, when they keep them in the repository (git-ignored)
 [ -f .release.env ] && . ./.release.env
-SITE=https://openfitnessprotocol.com
+SITE=https://openfitnessprotocol.org
 BUCKET=ofp-releases
 OUT=release
 

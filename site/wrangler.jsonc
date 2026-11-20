@@ -1,5 +1,5 @@
 {
-  // openfitnessprotocol.com. Deploy: site/deploy.sh (account and credentials come from the environment).
+  // openfitnessprotocol.org (and .com, www. on both, redirected to it). Deploy: site/deploy.sh (account and credentials come from the environment).
   "$schema": "../node_modules/wrangler/config-schema.json",
   "name": "ofp-site",
   "main": "worker.js",

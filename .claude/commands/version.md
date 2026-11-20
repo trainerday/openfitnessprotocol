@@ -1,5 +1,5 @@
 Release a new version of OFP Studio (the Mac app and the Windows installer), with its notes, the downloads on
-openfitnessprotocol.com and the GitHub release.
+openfitnessprotocol.org and the GitHub release.
 
 **The runbook is [docs/releasing.md](../../docs/releasing.md). Read it before running this.** The work is done by
 `scripts/release.sh`; this command decides the version, checks the notes, runs it, and checks the result.
@@ -54,11 +54,11 @@ for it. When a step fails, fix the cause and run **that step** again (`scripts/r
 ## 5. Check, then report
 
 ```sh
-curl -s https://openfitnessprotocol.com/download/latest.json      # the new version, both files
+curl -s https://openfitnessprotocol.org/download/latest.json      # the new version, both files
 curl -sI <each download url>                                        # 200, the size in releases.json
 ```
 
-Open `https://openfitnessprotocol.com/download` and `/releases` and check the version and notes are there.
+Open `https://openfitnessprotocol.org/download` and `/releases` and check the version and notes are there.
 
 Report in a few lines: the version, the download page, which platforms, the GitHub release (or "the repository
 is not public: none"), and anything that was skipped. Do not paste the notes back unless asked.

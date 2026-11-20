@@ -1,7 +1,7 @@
 # Changes
 
 What changed in each release of OFP Studio, the `ofp` command and the JavaScript package, newest first.
-Published at https://openfitnessprotocol.com/releases.
+Published at https://openfitnessprotocol.org/releases.
 
 How to write it: one line per thing a user would notice, new things first, at most about seven; small
 fixes are folded into a last "Bug fixes and improvements". Notes for the next release go under `## Next`;

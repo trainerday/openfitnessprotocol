@@ -308,7 +308,7 @@ The rules, for people and AI assistants: [`AGENTS.md`](AGENTS.md). How a pull re
 ### Try it
 
 The quickest way to see it: download **OFP Studio** for Mac or Windows from
-[openfitnessprotocol.com/download](https://openfitnessprotocol.com/download). From the repository: `npm start` (or
+[openfitnessprotocol.org/download](https://openfitnessprotocol.org/download). From the repository: `npm start` (or
 `cargo run --release -p ofp-cli -- studio`) builds the tool the first time and opens the Studio in your browser.
 `npm run app` opens the same Studio in a window of its own, and `npm run app:build` makes a Mac app of it
 (`docs/studio.md`, "The app").

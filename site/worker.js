@@ -1,7 +1,7 @@
-// openfitnessprotocol.com: the pages (static assets, built by build.mjs) and the downloads (R2).
-// The other names (.org, www.) are sent to the same path on the main one.
+// openfitnessprotocol.org: the pages (static assets, built by build.mjs) and the downloads (R2).
+// The other names (openfitnessprotocol.com, and www. on both) are sent to the same path on the main one.
 
-const HOME = 'openfitnessprotocol.com';
+const HOME = 'openfitnessprotocol.org';
 
 export default {
   async fetch(request, env) {

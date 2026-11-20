@@ -1,5 +1,5 @@
 #!/bin/sh
-# Builds and deploys openfitnessprotocol.com (the Cloudflare Worker "ofp-site", its pages and its routes).
+# Builds and deploys openfitnessprotocol.org (the Cloudflare Worker "ofp-site", its pages and its routes).
 # Needs, in the environment:
 #   CLOUDFLARE_ACCOUNT_ID
 #   and either CLOUDFLARE_API_TOKEN, or CLOUDFLARE_EMAIL with CLOUDFLARE_GLOBAL_API_KEY (or CLOUDFLARE_API_KEY).

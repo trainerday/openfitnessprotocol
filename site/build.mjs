@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..');
 const out = join(here, 'dist');
-const SITE = 'https://openfitnessprotocol.com';
+const SITE = 'https://openfitnessprotocol.org';
 const REPO = 'https://github.com/trainerday/openfitnessprotocol';
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
