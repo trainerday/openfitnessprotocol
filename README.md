@@ -280,7 +280,7 @@ the broadcast kind is wired in so far.
 
 ## Devices
 
-**Verified** (checked on a real device):
+**Verified device types** (each type checked on a real device, not every model):
 
 | Device | What OFP reads |
 |---|---|

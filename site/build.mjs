@@ -148,7 +148,8 @@ function home(latest) {
 <section>
   <h2>Devices</h2>
   <div class="cards devices">
-    <div class="card yes"><h3><span class="mark-yes" aria-hidden="true">✓</span> Verified</h3>
+    <div class="card yes"><h3><span class="mark-yes" aria-hidden="true">✓</span> Verified device types</h3>
+      <p class="small">Each type checked on a real device, not every model.</p>
       <ul>
         <li><b>Heart rate straps</b> (Garmin, Polar and others): heart rate and RR intervals for HRV</li>
         <li><b>Power meters</b>: power, cadence</li>
