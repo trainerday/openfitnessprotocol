@@ -1,6 +1,6 @@
 {
   "name": "ofp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Open Fitness Protocol for JavaScript apps: the core (WebAssembly, or plain JavaScript where there is no WebAssembly) and the few hooks an app wires up.",
   "license": "Apache-2.0",
   "type": "module",
