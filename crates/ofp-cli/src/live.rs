@@ -350,6 +350,7 @@ fn verdict_text(v: &Verdict) -> String {
 fn draw(s: &LiveState, mode: &Mode, file: &std::path::Path) -> std::io::Result<()> {
     let mut o = std::io::stdout();
     let (cols, _) = terminal::size().unwrap_or((100, 40));
+    let cols = if cols == 0 { 100 } else { cols }; // some terminals report no size
     queue!(o, cursor::MoveTo(0, 0), terminal::Clear(terminal::ClearType::All))?;
     let mut lines: Vec<String> = Vec::new();
     if s.source_id.is_none() {
