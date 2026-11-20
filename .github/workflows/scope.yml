@@ -1,0 +1,43 @@
+name: scope
+
+# A device is added by a table: a pull request that adds or fixes one touches only registry/.
+# Anything else (the core, the packages, the scripts, the docs) needs a maintainer to have accepted it
+# first; they say so with the label "scope accepted". See AGENTS.md, "Stay in the table".
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+jobs:
+  scope:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Does this stay inside registry/?
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          ACCEPTED: ${{ contains(github.event.pull_request.labels.*.name, 'scope accepted') }}
+        run: |
+          outside=$(git diff --name-only "$BASE...$HEAD" | grep -v '^registry/' || true)
+          if [ -z "$outside" ]; then
+            echo "Only registry/ is touched: this is a table pull request."
+            exit 0
+          fi
+          echo "Files outside registry/:"
+          echo "$outside" | sed 's/^/  /'
+          if [ "$ACCEPTED" = "true" ]; then
+            echo "A maintainer accepted this scope (label: scope accepted)."
+            exit 0
+          fi
+          echo
+          echo "A device is added by a table, not by changing the core."
+          echo "If the table language could not express your device, open the issue"
+          echo "\"A table cannot express this device\" and link it here. A maintainer adds the"
+          echo "label \"scope accepted\" once the change is agreed. See AGENTS.md, \"Stay in the table\"."
+          exit 1

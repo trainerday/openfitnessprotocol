@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: How to add a device (read this first)
+    url: https://github.com/trainerday/openfitnessprotocol/blob/main/AGENTS.md
+    about: A device is added by a table, not by changing the core. The rules and the steps are here.

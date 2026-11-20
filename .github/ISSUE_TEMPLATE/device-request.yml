@@ -1,0 +1,33 @@
+name: A device I wish worked
+description: Tell us about a fitness device that OFP does not read yet.
+labels: ["device request"]
+body:
+  - type: input
+    id: device
+    attributes:
+      label: Device
+      description: Maker and model, and the firmware version if you know it.
+    validations:
+      required: true
+  - type: textarea
+    id: sends
+    attributes:
+      label: What it measures
+      description: The values it shows on its own display or in its own app (power, cadence, temperature, …).
+    validations:
+      required: true
+  - type: dropdown
+    id: own
+    attributes:
+      label: Do you have one?
+      options:
+        - "Yes, and I can record it with the Studio"
+        - "Yes, but I need help recording it"
+        - "No"
+    validations:
+      required: true
+  - type: textarea
+    id: recording
+    attributes:
+      label: A recording (optional, and the most useful thing you can add)
+      description: In the Studio, click Use on the device, use it for a minute, press "Stop and save" and attach the file here. Look at it first, it can contain a heart rate.

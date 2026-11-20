@@ -465,6 +465,8 @@ table by following the README, and the license, governance and contributing docu
   Certificate of Origin).
 - **No fees, ever.** No paid tiers, no certification fees. Nobody makes money from the protocol.
 - **The name is protected** only so that "OFP compatible" means "passes the conformance tests".
+  The rules for the names are in `TRADEMARKS.md`. (A named conformance suite does not exist yet: today
+  the line is this repository's own check.)
 
 ## Related work
 

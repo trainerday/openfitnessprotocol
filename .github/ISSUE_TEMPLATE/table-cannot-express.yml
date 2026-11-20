@@ -1,0 +1,58 @@
+name: A table cannot express this device
+description: You tried to add a device with a table and the table language could not say what was needed. This is how a change to the core is asked for.
+labels: ["core request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A device is added by a **table**, not by changing the core. Before opening this, read
+        "Stay in the table" in [AGENTS.md](https://github.com/trainerday/openfitnessprotocol/blob/main/AGENTS.md).
+        All three of the first fields are needed. An issue without them is closed with a request for them.
+  - type: input
+    id: device
+    attributes:
+      label: Device
+      description: Maker, model, firmware.
+    validations:
+      required: true
+  - type: textarea
+    id: recording
+    attributes:
+      label: 1. The recording
+      description: Attach the file the Studio made ("Stop and save"), with your notes of what the device's own display showed.
+    validations:
+      required: true
+  - type: textarea
+    id: table
+    attributes:
+      label: 2. The table as far as it got
+      description: Paste the table text, or link the pull request with the draft. Say which values it already reads correctly.
+      render: yaml
+    validations:
+      required: true
+  - type: textarea
+    id: missing
+    attributes:
+      label: 3. The one thing the table language could not say
+      description: 'As exactly as you can. Example: "power is the low 12 bits of bytes 4–5 of packet type A plus the high byte from packet type B, and the two arrive in separate notifications".'
+    validations:
+      required: true
+  - type: textarea
+    id: tried
+    attributes:
+      label: What you tried
+      description: Which reader (broadcast, notify), which conditions, masks or arithmetic, and why each was not enough.
+    validations:
+      required: true
+  - type: textarea
+    id: others
+    attributes:
+      label: Other devices that would need the same
+      description: The core gets general patterns, not code for one device. If you know a second device that sends data this way, name it.
+  - type: checkboxes
+    id: open
+    attributes:
+      label: The device sends this openly
+      options:
+        - label: Reading it needs no authentication, encryption, pairing secret or handshake to be defeated.
+          required: true

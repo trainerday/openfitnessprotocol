@@ -1,0 +1,4 @@
+# Everything is reviewed by a maintainer before it reaches main (the branch rule requires a code owner's
+# approval). Maintainers are added here as people's tables, fields and readers are merged (docs/design.md,
+# "How the repo governs").
+*   @trainerday-alex

@@ -298,13 +298,19 @@ Ways to help, from easiest to hardest:
 - **Confirm someone else's table** on your own device. A second confirmation is what moves a table
   from "submitted" to "confirmed".
 - **Propose a field** for a measurement that does not exist yet.
-- **Request a reader** when a device sends data in a way no existing reader understands.
-- **Help build the core** (Rust).
+- **Tell us when a table cannot express a device** (the issue form "A table cannot express this device").
+  That is how a new reader or a change to the core is asked for; a device is never added by patching the core.
+- **Help build the core** (Rust), on a change that has been accepted that way.
+
+The rules, for people and AI assistants: [`AGENTS.md`](AGENTS.md). How a pull request gets in:
+[`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ### Try it
 
 The quickest way to see it: `npm start` (or `cargo run --release -p ofp-cli -- studio`). It builds
 the tool the first time and opens the Studio in your browser.
+`npm run app` opens the same Studio in a window of its own, and `npm run app:build` makes a Mac app of it
+(`docs/studio.md`, "The app").
 
 You need [Rust](https://rustup.rs). The Bluetooth commands are tested on macOS so far; the library
 they use also supports Windows and Linux.
@@ -376,4 +382,7 @@ it, we intend to hand its stewardship, including the name, to the community or t
 
 - **License: [Apache-2.0](LICENSE)** for code, tables and documents, so any app can use it, open
   or closed.
+- **The names** "Open Fitness Protocol" and "OFP" are trademarks of TrainerDay Inc, kept only so that
+  "OFP compatible" means the same thing everywhere: [`TRADEMARKS.md`](TRADEMARKS.md). Copyright:
+  [`NOTICE`](NOTICE).
 - **No fees, ever.** No paid tiers and no certification fees. Nobody makes money from the protocol.
