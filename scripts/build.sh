@@ -16,7 +16,7 @@ cargo run --quiet -p ofp-cli --no-default-features -- compile -o dist/registry.b
 if command -v wasm2js >/dev/null; then
   wasm2js -O dist/ofp_core.wasm -o dist/ofp_core.asm.js
 else
-  echo "wasm2js not found (brew install binaryen): dist/ofp_core.asm.js not rebuilt" >&2
+  echo "wasm2js not found (binaryen, version 133 or newer): dist/ofp_core.asm.js not rebuilt" >&2
 fi
 cp packages/ofp-js/index.js dist/ofp.js
 cp packages/ofp-js/index.d.ts dist/ofp.d.ts

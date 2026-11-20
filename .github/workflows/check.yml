@@ -21,8 +21,11 @@ jobs:
         run: cargo build -p ofp-core --target thumbv7em-none-eabihf
       - name: Registry check (fields, tables, vectors, captures)
         run: cargo run -p ofp-cli --no-default-features -- check
+      # The distribution's binaryen is too old for the WebAssembly features Rust emits today
       - name: binaryen (the core as plain JavaScript, for runtimes with no WebAssembly)
-        run: sudo apt-get update && sudo apt-get install -y binaryen
+        run: |
+          curl -sSL https://github.com/WebAssembly/binaryen/releases/download/version_133/binaryen-version_133-x86_64-linux.tar.gz | tar xz
+          echo "$PWD/binaryen-version_133/bin" >> "$GITHUB_PATH"
       - name: WebAssembly core, plain-JavaScript core and bundle
         run: scripts/build.sh
       - name: JavaScript package, against both forms of the core
