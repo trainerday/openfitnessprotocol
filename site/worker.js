@@ -2,6 +2,9 @@
 // The other names (openfitnessprotocol.com, and www. on both) are sent to the same path on the main one.
 
 const HOME = 'openfitnessprotocol.org';
+/** Caching is off while the site is being built: every page, download and JSON is fetched fresh.
+ *  Set to false to cache again (versioned downloads for a year, the rest for a minute). */
+const NO_CACHE = true;
 
 export default {
   async fetch(request, env) {
@@ -15,7 +18,12 @@ export default {
     if (url.pathname.startsWith('/download/') && url.pathname.length > '/download/'.length) {
       return fromBucket(request, env, url.pathname.slice(1));
     }
-    return env.ASSETS.fetch(request);
+    const page = await env.ASSETS.fetch(request);
+    if (!NO_CACHE) return page;
+    const fresh = new Response(page.body, page);
+    fresh.headers.set('cache-control', 'no-store');
+    fresh.headers.delete('etag');
+    return fresh;
   },
 };
 
@@ -34,7 +42,7 @@ async function fromBucket(request, env, key) {
   headers.set('etag', object.httpEtag);
   headers.set('accept-ranges', 'bytes');
   const moving = key.endsWith('.json') || key.includes('-latest-');
-  headers.set('cache-control', moving ? 'public, max-age=60, must-revalidate' : 'public, max-age=31536000, immutable');
+  headers.set('cache-control', NO_CACHE ? 'no-store' : moving ? 'public, max-age=60, must-revalidate' : 'public, max-age=31536000, immutable');
   if (key.endsWith('.json')) for (const [k, v] of Object.entries(cors())) headers.set(k, v);
   if (key.endsWith('.dmg')) headers.set('content-disposition', `attachment; filename="${key.split('/').pop()}"`);
 

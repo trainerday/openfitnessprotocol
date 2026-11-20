@@ -84,6 +84,12 @@ function home(latest) {
   <div class="actions"><a class="button quiet" href="${REPO}/blob/main/docs/integrating.md">Add OFP to your app</a></div>
 </div>
 
+<section class="free" aria-label="Free and open source">
+  <div><b>100% free</b>No fees, no paid tiers, no account. Ever.</div>
+  <div><b>Fully open source</b>Apache-2.0. Use it in any app, open or closed, commercial or not.</div>
+  <div><b>For every app</b>Not tied to one company's app. Any app can use it, and anyone can add a device.</div>
+</section>
+
 <section class="card spotlight">
   <h2>Got a device that doesn't work?</h2>
   <p>Install OFP Studio and test it: wake the device, click <b>Use</b>, and see what it sends. Then give the recording and this project to an AI assistant (Claude, ChatGPT, any that can read code), and it can set the device up for you. You check the numbers against the device's own display, and send it in.</p>
@@ -136,7 +142,7 @@ function download(latest, changelog) {
     <a class="button" href="${esc(latest.files.mac.url)}">Download for Mac</a>
     ${latest.files.windows ? `<a class="button" href="${esc(latest.files.windows.url)}">Download for Windows</a>` : ''}
   </div>
-  <p class="small">Version ${esc(latest.version)} · ${longDate(latest.date)}</p>
+  <p class="small">Version ${esc(latest.version)} · ${longDate(latest.date)} · free and open source (Apache-2.0)</p>
   <p class="small">Mac: macOS 11 or later, Apple Silicon and Intel, ${mb(latest.files.mac.size)}, signed and notarized by Apple.${latest.files.windows ? `<br>Windows: Windows 10 or 11 (64-bit), ${mb(latest.files.windows.size)}, signed.` : ' Windows is coming.'}</p>
 </div>
 

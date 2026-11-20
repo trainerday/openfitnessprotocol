@@ -9,7 +9,7 @@ fixes are folded into a last "Bug fixes and improvements". Notes for the next re
 
 ## 0.1.0 (2026-11-20)
 
-- OFP Studio as an app for the Mac, with its own window: no browser or terminal needed.
+- OFP Studio as an app for Mac and Windows, with its own window: no browser or terminal needed.
 - Devices: the ones something can read come first, fitness devices nothing reads yet are listed below
   them, and everything else is one click away under "Don't see your device?".
 - Live: what your device sends right now, grouped by what reads it, with "Yes, this is right" or "No,

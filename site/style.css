@@ -69,3 +69,10 @@ footer.bottom p { margin: 4px 0; }
 .card.spotlight { padding: 28px 30px; margin: 8px 0 12px; border-color: #c9d8fb; background: linear-gradient(180deg, #f4f8ff, #fff); }
 .card.spotlight h2 { font-size: 26px; }
 .card.spotlight p { color: var(--text); font-size: 17px; max-width: 720px; margin-bottom: 18px; }
+
+.free { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0; padding: 0; margin: 0 0 22px;
+  background: var(--ink); color: #d7dbe6; border-radius: 14px; overflow: hidden; }
+.free div { padding: 18px 22px; font-size: 15px; border-right: 1px solid rgba(255,255,255,.08); }
+.free div:last-child { border-right: 0; }
+.free b { display: block; color: #fff; font-size: 18px; margin-bottom: 2px; }
+@media (max-width: 640px) { .free div { border-right: 0; border-bottom: 1px solid rgba(255,255,255,.08); } }
