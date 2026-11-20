@@ -155,12 +155,13 @@ function home(latest) {
         <li><b>Speed and cadence sensors</b></li>
         <li><b>Spin bikes and indoor bikes</b> with the Bluetooth fitness machine standard (FTMS): Schwinn IC4 / Bowflex C6, Stages, newer Yesoul and Domyos, and many more</li>
         <li><b>Keiser M3i</b> bike</li>
+        <li><b>Rowers with FTMS</b>: Concept2 and others</li>
+        <li><b>Treadmills with FTMS</b></li>
       </ul>
     </div>
     <div class="card"><h3>Not verified yet</h3>
       <ul>
         <li>Running speed and cadence sensors</li>
-        <li>FTMS rowers (Concept2 and others) and treadmills</li>
         <li>CORE body temperature sensor</li>
         <li>Tymewear VitalPro breathing sensor</li>
         <li>Domyos bikes without FTMS, older Yesoul, iConsole+ consoles, Nautilus</li>

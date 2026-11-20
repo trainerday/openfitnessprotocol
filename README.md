@@ -289,6 +289,8 @@ the broadcast kind is wired in so far.
 | Speed and cadence sensors (the Bluetooth standard) | speed, cadence |
 | Spin bikes and indoor bikes with the Bluetooth fitness machine standard (FTMS): Schwinn IC4 / Bowflex C6, Stages, newer Yesoul and Domyos bikes, and many more | power, cadence, speed, distance, resistance, heart rate |
 | Keiser M3i indoor bike | power, cadence, heart rate, gear, energy, distance, time |
+| Rowers with FTMS (Concept2 and others) | stroke rate, stroke count, power, distance |
+| Treadmills with FTMS | speed, incline, distance |
 
 **Smart trainers** (Wahoo KICKR, Tacx, Elite, Saris, Wattbike and others) are read too, power and cadence,
 but **read only**: OFP does not set their resistance or ERG mode. Your app keeps controlling them the way it
@@ -300,7 +302,6 @@ owner to check them in OFP Studio):
 | Device | What OFP reads |
 |---|---|
 | Running speed and cadence sensors (the Bluetooth standard) | speed, running cadence |
-| FTMS rowers (Concept2 and others) and treadmills | rower: stroke rate and count, power, distance; treadmill: speed, incline, distance |
 | CORE body temperature sensor | core and skin temperature, heart rate, heat strain |
 | Tymewear VitalPro breathing sensor | breathing rate, tidal volume, ventilation |
 | Domyos bikes without FTMS, older Yesoul bikes, iConsole+ consoles, Nautilus bikes | power or speed, cadence, resistance (each as it sends) |
