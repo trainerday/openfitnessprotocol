@@ -1,5 +1,12 @@
 # Making the repository public
 
+**Done 2026-11-20.** The repository is public. Set on GitHub that day: the branch rule for `main`
+(`scripts/github-rules.sh`: pull requests only, **check** and **scope** green, a code owner approves, no
+force-push or deletion; `trainerday-alex` may bypass), the three labels, private vulnerability reporting,
+secret scanning with push protection, approval before any outside contributor's workflow runs, workflows
+read-only by default, branches deleted after merge, the description, topics and the site address. The first
+release, 0.1.0, is on the site and as a GitHub release. The rest of this page is the checklist as it was.
+
 Written 2026-11-20, while the repository was still private. What is ready, what to look at before the
 switch, and what to set on GitHub right after it.
 
