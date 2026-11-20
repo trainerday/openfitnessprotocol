@@ -15,7 +15,7 @@ mod engine;
 mod expr;
 
 pub use bundle::{Bundle, FieldDef, FieldType, Instance, MatchRule, SampleKind, Table, TableField, Tier};
-pub use engine::{Advertisement, Core, FieldDescription, Message};
+pub use engine::{Advertisement, Core, FieldDescription, Message, Settings};
 pub use expr::{BinOp, Expr, MAX_EXPR_DEPTH, MAX_EXPR_NODES};
 
 /// Version of the bundle format this core reads.

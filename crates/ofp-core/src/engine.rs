@@ -64,23 +64,61 @@ pub enum Message {
         /// True for the zero values sent when a source goes silent.
         #[serde(skip_serializing_if = "core::ops::Not::not")]
         stale: bool,
+        /// True when these are the standing values sent again (`repeat_ms`), not a new packet.
+        #[serde(skip_serializing_if = "core::ops::Not::not")]
+        repeat: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
         rssi: Option<i16>,
     },
     /// No packet for the table's `stale_after_ms`. Values resume without a new `source_appeared`.
     SourceStale { source_id: String },
+    /// The source is now in use. `auto` when the core started using it by itself because the host
+    /// had listed it as remembered and it was heard.
+    SourceInUse {
+        source_id: String,
+        #[serde(skip_serializing_if = "core::ops::Not::not")]
+        auto: bool,
+    },
+    /// A source in use stayed silent for the host's `lost_after_ms`. It is no longer in use; if it
+    /// is remembered it is used again by itself when it is heard.
+    SourceLost { source_id: String },
 }
 
 struct Source {
     table: usize,
     last_ms: u64,
     stale: bool,
+    in_use: bool,
+    /// What `source_appeared` said, kept so it can be said again.
+    description: Message,
+    /// The standing values (the last of each field).
+    values: BTreeMap<String, Value>,
+    /// When values last went out to the host (a packet or a repeat).
+    emitted_ms: u64,
+    rssi: Option<i16>,
+}
+
+/// What the host sets once, at the start.
+#[derive(Clone, Debug, Default)]
+pub struct Settings {
+    /// Wait at least this long before a source counts as silent, whatever its table says: for a
+    /// radio that misses many advertisements.
+    pub min_stale_ms: u64,
+    /// While a source in use is not silent, send its standing values again when nothing went out
+    /// for this long (0 = never). For hosts that treat "no event" as "no data".
+    pub repeat_ms: u64,
+    /// A source in use that is silent this long is lost (0 = never).
+    pub lost_after_ms: u64,
+    /// Sources the rider used before: they are used again as soon as they are heard.
+    pub remembered: Vec<String>,
+    /// Bluetooth services the app reads by itself. `None` = the app did not say.
+    pub handled_services: Option<Vec<String>>,
 }
 
 pub struct Core {
     bundle: Bundle,
     sources: BTreeMap<String, Source>,
-    min_stale_ms: u64,
+    settings: Settings,
 }
 
 impl Core {
@@ -124,13 +162,59 @@ impl Core {
                 }
             }
         }
-        Ok(Core { bundle, sources: BTreeMap::new(), min_stale_ms: 0 })
+        Ok(Core { bundle, sources: BTreeMap::new(), settings: Settings::default() })
     }
 
     /// A host whose radio misses many advertisements can wait longer than a table says before a
     /// source counts as silent. The longer of the two times is used.
     pub fn set_min_stale_ms(&mut self, ms: u64) {
-        self.min_stale_ms = ms;
+        self.settings.min_stale_ms = ms;
+    }
+
+    pub fn settings(&self) -> &Settings {
+        &self.settings
+    }
+
+    pub fn settings_mut(&mut self) -> &mut Settings {
+        &mut self.settings
+    }
+
+    /// The rider chose this source. Its values are from now on kept alive between packets
+    /// (`repeat_ms`) and its silence leads to `source_lost`. Nothing is sent to the device.
+    pub fn use_source(&mut self, source_id: &str, now_ms: u64) -> Result<Vec<Message>, String> {
+        let s = self.sources.get_mut(source_id).ok_or_else(|| format!("no source '{source_id}' has been heard"))?;
+        let mut out = Vec::new();
+        // The rider's choice is remembered: after being lost, the source is used again when heard.
+        if !self.settings.remembered.iter().any(|r| r == source_id) {
+            self.settings.remembered.push(source_id.to_string());
+        }
+        if !s.in_use {
+            s.in_use = true;
+            out.push(Message::SourceInUse { source_id: source_id.to_string(), auto: false });
+            if !s.stale && !s.values.is_empty() {
+                s.emitted_ms = now_ms;
+                out.push(Message::Values { source_id: source_id.to_string(), t: now_ms, fields: s.values.clone(), out_of_range: Vec::new(), stale: false, repeat: true, rssi: s.rssi });
+            }
+        }
+        Ok(out)
+    }
+
+    /// The rider stopped using it. The host forgets it too (takes it out of `remembered`).
+    pub fn release_source(&mut self, source_id: &str) {
+        if let Some(s) = self.sources.get_mut(source_id) {
+            s.in_use = false;
+        }
+        self.settings.remembered.retain(|r| r != source_id);
+    }
+
+    pub fn is_in_use(&self, source_id: &str) -> bool {
+        self.sources.get(source_id).is_some_and(|s| s.in_use)
+    }
+
+    /// The sources heard within `heard_within_ms` (and every source in use): what a device list
+    /// that just opened should show. Each as its `source_appeared` message.
+    pub fn sources(&self, now_ms: u64, heard_within_ms: u64) -> Vec<Message> {
+        self.sources.values().filter(|s| s.in_use || now_ms.saturating_sub(s.last_ms) <= heard_within_ms).map(|s| s.description.clone()).collect()
     }
 
     pub fn bundle(&self) -> &Bundle {
@@ -168,8 +252,20 @@ impl Core {
                     if self.sources.len() >= MAX_SOURCES {
                         return out;
                     }
-                    self.sources.insert(source_id.clone(), Source { table: ti, last_ms: adv.now_ms, stale: false });
-                    out.push(describe(&self.bundle, table, &source_id, instance));
+                    let description = describe(&self.bundle, table, &source_id, instance);
+                    out.push(description.clone());
+                    self.sources.insert(
+                        source_id.clone(),
+                        Source { table: ti, last_ms: adv.now_ms, stale: false, in_use: false, description, values: BTreeMap::new(), emitted_ms: adv.now_ms, rssi: adv.rssi },
+                    );
+                }
+            }
+            // A remembered source is used again as soon as it is heard.
+            let remembered = self.settings.remembered.iter().any(|r| *r == source_id);
+            if let Some(s) = self.sources.get_mut(&source_id) {
+                if remembered && !s.in_use {
+                    s.in_use = true;
+                    out.push(Message::SourceInUse { source_id: source_id.clone(), auto: true });
                 }
             }
 
@@ -189,31 +285,61 @@ impl Core {
                     fields.insert(tf.field.clone(), to_json(v, def));
                 }
             }
-            out.push(Message::Values { source_id, t: adv.now_ms, fields, out_of_range, stale: false, rssi: adv.rssi });
+            if let Some(s) = self.sources.get_mut(&source_id) {
+                for (k, v) in &fields {
+                    s.values.insert(k.clone(), v.clone());
+                }
+                for k in &out_of_range {
+                    s.values.remove(k);
+                }
+                s.emitted_ms = adv.now_ms;
+                if adv.rssi.is_some() {
+                    s.rssi = adv.rssi;
+                }
+            }
+            out.push(Message::Values { source_id, t: adv.now_ms, fields, out_of_range, stale: false, repeat: false, rssi: adv.rssi });
             return out;
         }
         out
     }
 
-    /// Call about once a second. Sends zero values and `source_stale` for sources gone silent.
+    /// Call about once a second. Silent sources read zero (`source_stale`); sources in use have
+    /// their standing values repeated (`repeat_ms`) and are given up after `lost_after_ms`.
     pub fn tick(&mut self, now_ms: u64) -> Vec<Message> {
         let mut out = Vec::new();
+        let settings = &self.settings;
         for (id, s) in self.sources.iter_mut() {
             let table = &self.bundle.tables[s.table];
-            if s.stale || now_ms.saturating_sub(s.last_ms) < table.stale_after_ms.max(self.min_stale_ms) {
-                continue;
-            }
-            s.stale = true;
-            let mut fields = BTreeMap::new();
-            for tf in &table.fields {
-                if let Some(def) = self.bundle.field(&tf.field) {
-                    if def.kind == SampleKind::Instantaneous {
-                        fields.insert(tf.field.clone(), to_json(0.0, def));
+            let silent_for = now_ms.saturating_sub(s.last_ms);
+            if !s.stale && silent_for >= table.stale_after_ms.max(settings.min_stale_ms) {
+                s.stale = true;
+                let mut fields = BTreeMap::new();
+                for tf in &table.fields {
+                    if let Some(def) = self.bundle.field(&tf.field) {
+                        if def.kind == SampleKind::Instantaneous {
+                            fields.insert(tf.field.clone(), to_json(0.0, def));
+                        }
                     }
                 }
+                for (k, v) in &fields {
+                    s.values.insert(k.clone(), v.clone());
+                }
+                s.emitted_ms = now_ms;
+                out.push(Message::Values { source_id: id.clone(), t: now_ms, fields, out_of_range: Vec::new(), stale: true, repeat: false, rssi: None });
+                out.push(Message::SourceStale { source_id: id.clone() });
             }
-            out.push(Message::Values { source_id: id.clone(), t: now_ms, fields, out_of_range: Vec::new(), stale: true, rssi: None });
-            out.push(Message::SourceStale { source_id: id.clone() });
+            if !s.in_use {
+                continue;
+            }
+            if s.stale {
+                if settings.lost_after_ms > 0 && silent_for >= settings.lost_after_ms {
+                    s.in_use = false;
+                    out.push(Message::SourceLost { source_id: id.clone() });
+                }
+            } else if settings.repeat_ms > 0 && now_ms.saturating_sub(s.emitted_ms) >= settings.repeat_ms && !s.values.is_empty() {
+                s.emitted_ms = now_ms;
+                out.push(Message::Values { source_id: id.clone(), t: now_ms, fields: s.values.clone(), out_of_range: Vec::new(), stale: false, repeat: true, rssi: s.rssi });
+            }
         }
         out
     }
@@ -413,6 +539,76 @@ mod tests {
         core.on_advertisement(&adv(&[2, 1, 0, 7, 187, 0], 0));
         assert!(core.tick(7999).is_empty());
         assert_eq!(core.tick(8000).len(), 2);
+    }
+
+    fn kinds(m: &[Message]) -> Vec<&'static str> {
+        m.iter()
+            .map(|m| match m {
+                Message::SourceAppeared { .. } => "appeared",
+                Message::Values { stale: true, .. } => "zeros",
+                Message::Values { .. } => "values",
+                Message::SourceStale { .. } => "stale",
+                Message::SourceInUse { auto: true, .. } => "in_use_auto",
+                Message::SourceInUse { .. } => "in_use",
+                Message::SourceLost { .. } => "lost",
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_source_in_use_repeats_its_values_and_is_lost_after_long_silence() {
+        let mut core = Core::from_bundle(bundle()).unwrap();
+        *core.settings_mut() = Settings { min_stale_ms: 10_000, repeat_ms: 1000, lost_after_ms: 60_000, ..Default::default() };
+        assert!(core.use_source("bike:7", 0).is_err(), "not heard yet");
+        core.on_advertisement(&adv(&[2, 1, 0, 7, 187, 0], 0));
+        // heard but not in use: no repeats
+        assert!(core.tick(1500).is_empty());
+        assert_eq!(kinds(&core.use_source("bike:7", 2000).unwrap()), ["in_use", "values"]);
+        assert!(core.use_source("bike:7", 2100).unwrap().is_empty(), "already in use");
+        assert!(core.is_in_use("bike:7"));
+        // the radio misses packets for a while: the standing values go out every second
+        assert!(core.tick(2500).is_empty());
+        let repeat = core.tick(3000);
+        assert_eq!(kinds(&repeat), ["values"]);
+        assert_eq!(values(&repeat[0]).1["power"], Value::from(187));
+        assert_eq!(kinds(&core.tick(4000)), ["values"]);
+        // a real packet resets the clock
+        core.on_advertisement(&adv(&[2, 1, 0, 7, 150, 0], 4500));
+        assert!(core.tick(5000).is_empty());
+        // silence: zeros once at the stale time, no repeats after, lost at a minute
+        assert_eq!(kinds(&core.tick(14_500)), ["zeros", "stale"]);
+        assert!(core.tick(15_500).is_empty());
+        assert_eq!(kinds(&core.tick(64_500)), ["lost"]);
+        assert!(!core.is_in_use("bike:7"));
+        assert!(core.tick(65_500).is_empty());
+    }
+
+    #[test]
+    fn a_remembered_source_is_used_as_soon_as_it_is_heard_and_returns_after_being_lost() {
+        let mut core = Core::from_bundle(bundle()).unwrap();
+        *core.settings_mut() = Settings { lost_after_ms: 60_000, remembered: vec!["bike:7".into()], ..Default::default() };
+        assert_eq!(kinds(&core.on_advertisement(&adv(&[2, 1, 0, 7, 187, 0], 0))), ["appeared", "in_use_auto", "values"]);
+        assert_eq!(kinds(&core.on_advertisement(&adv(&[2, 1, 0, 8, 100, 0], 10))), ["appeared", "values"], "another bike is not ours");
+        assert_eq!(kinds(&core.tick(3100)), ["zeros", "stale", "zeros", "stale"]);
+        assert_eq!(kinds(&core.tick(60_000)), ["lost"]);
+        assert_eq!(kinds(&core.on_advertisement(&adv(&[2, 1, 0, 7, 120, 0], 90_000))), ["in_use_auto", "values"]);
+        // the rider disconnects it: forgotten, and not used again by itself
+        core.release_source("bike:7");
+        assert!(!core.is_in_use("bike:7"));
+        assert_eq!(kinds(&core.on_advertisement(&adv(&[2, 1, 0, 7, 120, 0], 91_000))), ["values"]);
+    }
+
+    #[test]
+    fn the_device_list_gets_what_is_in_range() {
+        let mut core = Core::from_bundle(bundle()).unwrap();
+        core.on_advertisement(&adv(&[2, 1, 0, 7, 187, 0], 0));
+        core.on_advertisement(&adv(&[2, 1, 0, 8, 100, 0], 40_000));
+        core.use_source("bike:7", 100).unwrap();
+        // bike 7 was heard long ago but is in use; bike 8 was just heard
+        assert_eq!(core.sources(45_000, 30_000).len(), 2);
+        core.release_source("bike:7");
+        let recent = core.sources(45_000, 30_000);
+        assert!(matches!(&recent[..], [Message::SourceAppeared { source_id, .. }] if source_id == "bike:8"));
     }
 
     #[test]

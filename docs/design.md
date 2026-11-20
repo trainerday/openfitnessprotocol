@@ -158,9 +158,44 @@ heard of.
 - Where a Bluetooth standard already exists for a value, a Connect can also offer it in that
   standard form, so apps that know nothing about OFP still work.
 
+### Inside an app: what the app wires up
+
+*Decided 2026-11-20. Built for broadcast devices: all four hooks, in the core and in
+`packages/ofp-js`. The list of services is accepted but not acted on yet (nothing to hold back
+until the core reads connectable devices).*
+The promise to an app developer: add the library and about twenty lines, and any device with a
+table works in the app the day the table is merged. Because OFP has no radio, four things connect
+it to the app:
+
+1. **Initialize with what the app already reads**: the list of Bluetooth services (or single
+   characteristics) the app handles itself. See "The app says what it already reads".
+2. **The full scan in**: every advertisement the app's scanner hears, before the app's own
+   filtering. Later, for devices that are connected to, also the notifications of the
+   characteristics OFP asks for.
+3. **Results out**: devices OFP recognises are announced so they land in the app's existing device
+   list; their readings come back as events.
+4. **The rider's choice in**: when the rider picks an OFP device, the app tells OFP "use this
+   source" (and "stop using it"), instead of making a Bluetooth connection.
+
+The bookkeeping around those hooks is in the library, not in each app: which sources are in use,
+which are remembered, repeating the standing values while the radio has a gap, declaring a source
+silent and later lost. *As built:* in the core, behind the host interface below, and wrapped for
+JavaScript apps in `packages/ofp-js`. Saving the remembered ids between launches stays with the app.
+
+**Readings come out in two forms.** Values that fit what every training app has (power, cadence,
+heart rate, speed) can be delivered in the shape the app already uses. Everything else is a
+**generic field event**: the source describes each field once (key, name, unit, type, range, kind),
+then sends values. An app that shows and records that one event handles every future field; an app
+that ignores it loses nothing.
+
+**One requirement cannot be hidden**: a broadcast-only device's data is the scan, so the app keeps
+scanning, with repeats, while such a device is in use.
+
 ### Inside an app: a virtual Bluetooth device
 
-*Decided 2026-11-20, not built.* The goal is that adding OFP to an app is close to zero code change.
+*Decided 2026-11-20, not built.* The heavier route to the same end, for an app that wants no
+hooks at all: OFP wraps the Bluetooth library the app uses, so the four hooks above happen inside
+the wrapper.
 
 - To the app, each OFP source looks like one more Bluetooth device, reached through the Bluetooth
   library the app already uses: it shows up in a scan, can be connected and subscribed to.
@@ -230,13 +265,18 @@ WebAssembly and native builds; requests and replies are JSON:
 |---|---|
 | `{"op":"advertisement","device_id":…,"name":…,"rssi":…,"manufacturer_data":"<hex, company id first>","now_ms":…}` | For every advertisement the host hears, from any device |
 | `{"op":"tick","now_ms":…}` | About once a second |
-| `{"op":"configure","min_stale_ms":…}` | Optional: a host whose radio misses many advertisements can wait longer than a table says before a source counts as silent |
+| `{"op":"configure", …}` | Once, at the start. `handled_services`: what the app reads itself. `remembered`: sources the rider used before. `min_stale_ms`: wait at least this long before a source counts as silent (for a radio that misses many advertisements). `repeat_ms`: send a source in use's standing values again when nothing went out for this long. `lost_after_ms`: give up a silent source in use after this long |
+| `{"op":"use_source","source_id":…,"now_ms":…}` | The rider picked this source. It is also remembered |
+| `{"op":"release_source","source_id":…}` | The rider let it go (and it is forgotten) |
+| `{"op":"sources","now_ms":…}` | The sources in range and in use, for a device list that just opened |
 
 | Message in the reply | Meaning |
 |---|---|
 | `source_appeared` | Sent once per source, before its first values: source id, name, and the description of every field it sends (id, name, unit, type, range, kind, tier) |
-| `values` | `source_id`, time, field key → value. Values outside a field's plausible range are left out and listed in `out_of_range`. `stale: true` marks the zeros sent when a source goes silent |
+| `values` | `source_id`, time, field key → value. Values outside a field's plausible range are left out and listed in `out_of_range`. `stale: true` marks the zeros sent when a source goes silent; `repeat: true` marks standing values sent again |
 | `source_stale` | No packet for the stale time. Values resume later without a new `source_appeared` |
+| `source_in_use` | The source is now in use; `auto: true` when the core did it because the source was remembered and was heard |
+| `source_lost` | A source in use stayed silent for `lost_after_ms`. If it is remembered it is used again by itself when it is heard |
 
 Connecting, subscribing and writing are not in this version; they arrive with the notify readers.
 

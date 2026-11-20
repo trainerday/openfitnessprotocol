@@ -54,6 +54,7 @@ impl Collector {
                     self.timeline.push(Decoded { t, source_id, fields: values_of(&fields), stale });
                 }
                 Message::SourceStale { .. } => self.stats.stale_events += 1,
+                Message::SourceInUse { .. } | Message::SourceLost { .. } => {}
             }
         }
     }

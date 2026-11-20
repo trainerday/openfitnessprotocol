@@ -70,10 +70,10 @@ flowchart LR
 
 1. **Simple for riders.** Open the app, tap "Other sensors", pick the device. No settings, no
    jargon.
-2. **Simple for app developers.** Add one library. It gives your app a single stream of named
-   values: power and cadence, but also body temperature, breathing rate, rep count, rep weight:
-   whatever the device has. The library contains no
-   Bluetooth code of its own, so it fits beside what you already have.
+2. **Simple for app developers.** Add one library and about twenty lines. It gives your app a
+   single stream of named values: power and cadence, but also body temperature, breathing rate,
+   rep count, rep weight: whatever the device has. The library contains no Bluetooth code of its
+   own, so it fits beside what you already have.
 3. **Simple for contributors.** Most devices are added with a **table**: a short data file that
    says "these bytes mean power, these mean cadence". No programming is needed for the common
    cases.
@@ -155,6 +155,60 @@ flowchart TB
   several apps at once, for example a whole room of bikes.
 
 The same core runs in both, so a table behaves the same everywhere.
+
+## Add OFP to your app: about twenty lines
+
+**Add the library, wire it up once, and every device that gets a table works in your app the day
+the table is merged.** Tables are data, not code, so a new device reaches an app you shipped a
+year ago without an update, on iPhone too.
+
+OFP has no Bluetooth of its own. It listens through your app's Bluetooth, so there are four small
+things to connect:
+
+1. **Initialize, and say what you already read.** Pass the Bluetooth services your app handles by
+   itself (Heart Rate, Cycling Power, FTMS, …). This is a list of services, not of device models.
+   OFP offers only what is not on it.
+2. **Give it the full scan.** Every advertisement your scanner hears, before your own filtering: a
+   bike that only broadcasts has no name or service your filter would keep.
+3. **Hook into the results.** The devices OFP recognises go into your existing device list, and
+   their readings come back in the shape your app already uses.
+4. **Say when the rider picks one.** Your Connect button tells OFP "use this source" (and the same
+   for disconnect) instead of trying a normal Bluetooth connection.
+
+What your riders see:
+
+- A device only OFP can read appears like any other: a broadcast-only bike is simply that bike.
+- A device you already read that also has something of its own appears a second time as
+  **"<device> Extras"** (for example "Polar H10 Extras"), carrying only what the standards have no
+  place for. Your own handling of the device does not change.
+
+Three things to know before you count the lines:
+
+- **A broadcast device's data is the scan.** While one is in use your app must keep scanning, with
+  repeats. If your app stops scanning once its devices are connected, that is the part that takes
+  more than a few lines.
+- **New kinds of values need one generic tile.** Power, cadence, heart rate and speed fit the
+  places your app already has. A value it has never heard of (body temperature, rep count)
+  arrives as a generic event with its name, unit and range; show and record that once, and every
+  future field works too.
+- **"Every device" means every device a table can describe.** Today: devices that send their
+  numbers in their Bluetooth broadcast. Devices you connect to that simply notify come next.
+  Devices that need a handshake, encryption or real code are not tables.
+
+For a JavaScript app the four hooks are a small package, [`packages/ofp-js`](packages/ofp-js):
+
+```js
+const ofp = new Ofp({ engine, bundle, iRead: ['180d', '1818', '1826'], on: { device, values, inUse, lost } })
+scanner.on('advertisement', (a) => ofp.advertisement(a))   // every one, unfiltered
+ofp.use(id)                                                // the rider picked it
+```
+
+Status: two apps use it, both unreleased branches of TrainerDay's own: the desktop app (Electron,
+the core as WebAssembly) and the Android app (React Native, where there is no WebAssembly, so the
+same core runs as plain JavaScript). In both, the wiring is one small file. What works today is
+broadcast devices that fill the usual places (power, cadence). The list of services is passed in
+but not acted on yet, and the "Extras" devices and connect-type devices are designed, not built.
+The [design document](docs/design.md) has the details.
 
 ## Add your own device: a vibecoder-first project
 

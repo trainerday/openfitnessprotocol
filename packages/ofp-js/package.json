@@ -1,0 +1,13 @@
+{
+  "name": "ofp",
+  "version": "0.1.0",
+  "description": "Open Fitness Protocol for JavaScript apps: the core (WebAssembly, or plain JavaScript where there is no WebAssembly) and the few hooks an app wires up.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "files": ["index.js", "index.d.ts"],
+  "scripts": {
+    "test": "node --test test/ofp.test.js"
+  }
+}

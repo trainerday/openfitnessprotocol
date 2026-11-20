@@ -13,7 +13,9 @@
 //! ```
 //!
 //! Requests: `{"op":"advertisement","device_id":"…","name":"M3","rssi":-60,"manufacturer_data":"0201…","now_ms":1234}`
-//! `{"op":"tick","now_ms":1234}` (about once a second) and `{"op":"configure","min_stale_ms":8000}`. Replies: `{"messages":[…]}` or `{"error":"…"}`.
+//! `{"op":"tick","now_ms":1234}` (about once a second), `{"op":"configure",…}` (host settings),
+//! `{"op":"use_source","source_id":"…","now_ms":…}`, `{"op":"release_source","source_id":"…"}` and
+//! `{"op":"sources","now_ms":…}`. Replies: `{"messages":[…]}` or `{"error":"…"}`.
 
 use ofp_core::{Advertisement, Core, Message};
 use serde::Deserialize;
@@ -37,11 +39,38 @@ pub enum Request {
     Tick {
         now_ms: u64,
     },
-    /// Host settings. `min_stale_ms`: wait at least this long before a source counts as silent.
+    /// Host settings, sent once at the start (any of them may be left out).
     Configure {
+        /// Wait at least this long before a source counts as silent.
         #[serde(default)]
         min_stale_ms: Option<u64>,
+        /// Repeat a source in use's standing values when nothing went out for this long.
+        #[serde(default)]
+        repeat_ms: Option<u64>,
+        /// A source in use that is silent this long is lost.
+        #[serde(default)]
+        lost_after_ms: Option<u64>,
+        /// Sources the rider used before: used again as soon as they are heard.
+        #[serde(default)]
+        remembered: Option<Vec<String>>,
+        /// Bluetooth services the app reads by itself.
+        #[serde(default)]
+        handled_services: Option<Vec<String>>,
     },
+    /// The rider chose this source.
+    UseSource { source_id: String, now_ms: u64 },
+    /// The rider stopped using it.
+    ReleaseSource { source_id: String },
+    /// Sources in range (and in use), for a device list that just opened.
+    Sources {
+        now_ms: u64,
+        #[serde(default = "default_heard_within")]
+        heard_within_ms: u64,
+    },
+}
+
+fn default_heard_within() -> u64 {
+    30_000
 }
 
 pub fn unhex(s: &str) -> Result<Vec<u8>, String> {
@@ -67,12 +96,31 @@ pub fn call(core: &mut Core, request: &str) -> Result<Vec<Message>, String> {
             core.on_advertisement(&Advertisement { device_id: &device_id, name: name.as_deref(), rssi, manufacturer_data: &data, now_ms })
         }
         Request::Tick { now_ms } => core.tick(now_ms),
-        Request::Configure { min_stale_ms } => {
+        Request::Configure { min_stale_ms, repeat_ms, lost_after_ms, remembered, handled_services } => {
+            let settings = core.settings_mut();
             if let Some(ms) = min_stale_ms {
-                core.set_min_stale_ms(ms);
+                settings.min_stale_ms = ms;
+            }
+            if let Some(ms) = repeat_ms {
+                settings.repeat_ms = ms;
+            }
+            if let Some(ms) = lost_after_ms {
+                settings.lost_after_ms = ms;
+            }
+            if let Some(r) = remembered {
+                settings.remembered = r;
+            }
+            if let Some(h) = handled_services {
+                settings.handled_services = Some(h);
             }
             Vec::new()
         }
+        Request::UseSource { source_id, now_ms } => core.use_source(&source_id, now_ms)?,
+        Request::ReleaseSource { source_id } => {
+            core.release_source(&source_id);
+            Vec::new()
+        }
+        Request::Sources { now_ms, heard_within_ms } => core.sources(now_ms, heard_within_ms),
     })
 }
 
@@ -198,6 +246,13 @@ mod tests {
             assert_eq!(send(core, r#"{"op":"tick","now_ms":4000}"#)["messages"].as_array().unwrap().len(), 0);
             assert_eq!(send(core, r#"{"op":"tick","now_ms":5010}"#)["messages"][1]["type"], "source_stale");
             assert!(send(core, r#"{"op":"nope"}"#)["error"].is_string());
+            // the rider's choice, and the device list
+            assert_eq!(send(core, r#"{"op":"use_source","source_id":"bike:7","now_ms":6000}"#)["messages"][0]["type"], "source_in_use");
+            assert!(send(core, r#"{"op":"use_source","source_id":"bike:99","now_ms":6000}"#)["error"].is_string());
+            assert_eq!(send(core, r#"{"op":"sources","now_ms":6000}"#)["messages"][0]["source_id"], "bike:7");
+            assert_eq!(send(core, r#"{"op":"configure","repeat_ms":1000,"lost_after_ms":60000,"remembered":["bike:7"],"handled_services":["180d"]}"#)["messages"].as_array().unwrap().len(), 0);
+            send(core, r#"{"op":"release_source","source_id":"bike:7"}"#);
+            assert_eq!(send(core, r#"{"op":"sources","now_ms":90000}"#)["messages"].as_array().unwrap().len(), 0);
             assert!(send(core, r#"{"op":"advertisement","manufacturer_data":"zz","now_ms":1}"#)["error"].is_string());
             ofp_core_free(core);
 

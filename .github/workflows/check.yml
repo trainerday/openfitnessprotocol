@@ -21,5 +21,9 @@ jobs:
         run: cargo build -p ofp-core --target thumbv7em-none-eabihf
       - name: Registry check (fields, tables, vectors, captures)
         run: cargo run -p ofp-cli --no-default-features -- check
-      - name: WebAssembly core and bundle
+      - name: binaryen (the core as plain JavaScript, for runtimes with no WebAssembly)
+        run: sudo apt-get update && sudo apt-get install -y binaryen
+      - name: WebAssembly core, plain-JavaScript core and bundle
         run: scripts/build.sh
+      - name: JavaScript package, against both forms of the core
+        run: cd packages/ofp-js && node --test test/ofp.test.js

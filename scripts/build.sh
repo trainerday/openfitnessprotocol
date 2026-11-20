@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Build what an app embeds: the core as WebAssembly and the compiled registry.
 #   dist/ofp_core.wasm          the core (C interface, see crates/ofp-ffi)
+#   dist/ofp_core.asm.js        the same core as plain JavaScript, for runtimes with no WebAssembly
+#                               (React Native's Hermes); needs binaryen's wasm2js
 #   dist/registry.bundle.json   fields and tables, compiled
+#   dist/ofp.js, dist/ofp.d.ts  the JavaScript package (packages/ofp-js): the hooks an app wires up
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -10,4 +13,11 @@ cargo build --quiet --release -p ofp-ffi --target wasm32-unknown-unknown
 mkdir -p dist
 cp target/wasm32-unknown-unknown/release/ofp_ffi.wasm dist/ofp_core.wasm
 cargo run --quiet -p ofp-cli --no-default-features -- compile -o dist/registry.bundle.json
+if command -v wasm2js >/dev/null; then
+  wasm2js -O dist/ofp_core.wasm -o dist/ofp_core.asm.js
+else
+  echo "wasm2js not found (brew install binaryen): dist/ofp_core.asm.js not rebuilt" >&2
+fi
+cp packages/ofp-js/index.js dist/ofp.js
+cp packages/ofp-js/index.d.ts dist/ofp.d.ts
 ls -l dist
