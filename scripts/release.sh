@@ -24,6 +24,8 @@ BUCKET=ofp-releases
 OUT=release
 
 die() { echo "release: $*" >&2; exit 1; }
+# GitHub sometimes refuses a maintainer's bypass of the branch rule for a moment after the last push
+push() { for i in 1 2 3 4; do git push -q "$@" && return 0; sleep 5; done; die "git push $* was refused four times"; }
 version() { sed -n 's/^version = "\([0-9.]*\)"/\1/p' Cargo.toml | head -1; }
 newer() { [ "$(printf '%s\n%s\n' "$1" "$2" | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)" = "$1" ] && [ "$1" != "$2" ]; }
 cloudflare() {
@@ -59,7 +61,7 @@ prepare() {
   git add -A
   git commit -q -s -m "Release $V"
   git tag -a "v$V" -m "OFP Studio $V"
-  git push -q origin main "v$V"
+  push origin main "v$V"
   echo "Released $V in git (commit and tag pushed)"
 }
 
@@ -121,7 +123,7 @@ Downloads and every version: $SITE/download"
   if [ -n "$(git status --porcelain site/releases.json)" ]; then
     git add site/releases.json
     git commit -q -s -m "Published $V"
-    git push -q origin main
+    push origin main
   fi
   echo "Published $V: $SITE/download"
 }
