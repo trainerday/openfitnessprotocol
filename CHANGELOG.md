@@ -7,6 +7,12 @@ How to write it: one line per thing a user would notice, new things first, at mo
 fixes are folded into a last "Bug fixes and improvements". Notes for the next release go under `## Next`;
 `scripts/release.sh` turns that heading into the version and date.
 
+## Next
+
+- Every number can be marked right or wrong, RR intervals too.
+- For app makers: the library is on npm, `npm install @openfitnessprotocol/ofp`, with TypeScript types for
+  React Native's plain-JavaScript core and the device tables.
+
 ## 0.2.1 (2026-11-20)
 
 - Heart rate straps: RR intervals (the time between beats, for HRV), one value per beat.
