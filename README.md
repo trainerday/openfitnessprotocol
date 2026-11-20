@@ -134,13 +134,17 @@ That is the whole "driver" for that bike.
 
 ```mermaid
 flowchart TB
-    subgraph one["Inside an app (first)"]
-        BT["The app's own Bluetooth"] --> LIB["OFP library"] --> UI["The app"]
+    subgraph one["OFP Core: inside an app (first)"]
+        BT["The app's own Bluetooth"] --> LIB["OFP Core"] --> UI["The app"]
     end
-    subgraph two["As a separate bridge (later)"]
-        S["Sensors"] --> BR["OFP bridge<br/>small always-on board,<br/>or a desktop app"] --> ANY["Any app,<br/>over Bluetooth or WiFi"]
+    subgraph two["OFP Connect: standalone (later)"]
+        S["Sensors"] --> BR["OFP Connect<br/>small always-on board,<br/>or a desktop app"] --> ANY["Any app,<br/>over Bluetooth or WiFi"]
     end
 ```
+
+- **OFP Core** is the library an app embeds. It has no Bluetooth code of its own.
+- **OFP Connect** is Core with its own radio. Over WiFi, one Connect can serve many devices to
+  several apps at once, for example a whole room of bikes.
 
 The same core runs in both, so a table behaves the same everywhere.
 
@@ -149,8 +153,9 @@ The same core runs in both, so a table behaves the same everywhere.
 We want contributors, and we want it to be easy. You do not need to be a Bluetooth expert.
 
 **Vibe coders are welcome.** If you built your table with Claude, Fable or any other AI assistant,
-great. Every contribution is checked the same way: against a real recording from the real device.
-If the numbers come out right, it does not matter who, or what, typed it.
+great. Say so in your pull request and stand behind it. Every contribution is checked the same way:
+against a real recording from the real device. If the numbers come out right, it does not matter
+who, or what, typed it.
 
 ```mermaid
 flowchart LR
@@ -181,18 +186,30 @@ want first.
 - Official values never change meaning. New ones can always be added.
 - The official collection holds tables only, never code.
 - Every table comes with a real recording, and the checks replay it.
+- A table is your own work: made from your own recordings or the maker's public documentation,
+  never copied from another project's code.
 - A table is **submitted**, then **confirmed** by a second person, then **field-proven** when apps
   report that it works for real riders.
 - You can load your own plugin from a URL on your own install. It is marked as unreviewed, and the
-  project does not host or list such plugins.
+  project does not host or list such plugins. (Inside iPhone apps only tables work; a device that
+  needs code reaches an iPhone through an OFP Connect.)
 
 ## Read more
 
 - [Design document](docs/design.md): the full design, what comes later, and the open questions.
 
-## Who is behind this
+## Thanks
+
+OFP stands on work others have done. [QZ](https://github.com/cagnulein/qdomyos-zwift) showed how
+much riders want their equipment to work everywhere, and it remains the tool for controlling
+trainers, which OFP does not do. [OpenBikeControl](https://openbikecontrol.org/) showed that a
+small open protocol can win over apps and hardware makers. The design document lists more.
+
+## Who is behind this, and the license
 
 OFP was started and is maintained by [TrainerDay](https://trainerday.com), a training app for
 indoor cycling. It is meant for every app and every device maker, and it is open to everyone.
 
-License: to be decided before the first public release.
+- **License: Apache-2.0** for code, tables and documents, so any app can use it, open or closed.
+  (The license file will be added before the first public release.)
+- **No fees, ever.** No paid tiers and no certification fees. Nobody makes money from the protocol.

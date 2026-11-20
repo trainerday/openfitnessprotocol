@@ -18,6 +18,15 @@ New fields and new devices are added to this repo with a pull request, not by a 
                           └──────────────────────┘
 ```
 
+## The pieces and their names
+
+| Name | What it is |
+|---|---|
+| **OFP** | The protocol and the project |
+| **OFP Core** | The library: readers, the table engine and the output. No Bluetooth. Embedded in an app |
+| **OFP Connect** | The standalone: Core plus its own radios and outputs — a stick, a desktop app or an Android app (later) |
+| **OFP Registry** | The fields and tables in this repo |
+
 ## The core: four parts
 
 Everything else in this document is optional and comes later.
@@ -36,15 +45,18 @@ one paragraph saying what it means.
   `cumulative` (total crank revolutions).
 - **Superset of existing standards.** Every field in Heart Rate, Cycling Power, Cycling Speed and
   Cadence, Running Speed and Cadence and FTMS has a registry id from the start.
+- **Values keep their context.** Power from a trainer, from a crank and from an estimate are not
+  interchangeable. Every value travels with its source, a timestamp, a validity flag and, where it
+  matters, where it was measured. OFP never silently merges two sources.
 
 ### 2. Readers
 
-A reader is code in the core that knows one *shape* of device communication. Readers are written
+A reader is code in OFP Core that knows one *shape* of device communication. Readers are written
 once, reviewed by maintainers, and are few:
 
 | Reader | Shape |
 |---|---|
-| Broadcast | Values inside the BLE advertisement; the device never accepts a connection |
+| Broadcast | Values inside the BLE advertisement (manufacturer data or service data); the device never accepts a connection |
 | Notify | Connect, subscribe to a characteristic, fixed layout |
 | Flagged notify | The same, with optional values switched on by flag bits |
 | Standard profiles | Heart Rate, Cycling Power, Speed and Cadence, Running Speed, FTMS data — layout already fixed by the Bluetooth standards, so no table is needed |
@@ -52,8 +64,15 @@ once, reviewed by maintainers, and are few:
 Because the standard profiles are readers too, an app can use OFP as its only way of reading
 sensors. Existing apps do not have to: OFP can sit beside the parsers an app already has.
 
-A new reader is requested with an issue (device, capture, how it sends data) and added to the core
-with a full code review. This should be rare.
+- **Generic when possible, specific when not.** A reader may be named after a single device when
+  that device's shape is truly its own. It can be folded into a generic reader later, when a second
+  device shows the same shape.
+- **How a reader is proven generic:** a second, unrelated device is decoded by the same reader with
+  only a new table.
+- **What makes a device not generic:** values spread across several packet types that must be
+  combined, checksums or rolling counters that must be validated, encrypted or obfuscated data.
+- A new reader is requested with an issue (device, capture, how it sends data) and added to the
+  core with a full code review. This should be rare.
 
 ### 3. Tables
 
@@ -67,6 +86,10 @@ A table teaches a reader about one device. It is data, not code:
 - which value tells two identical devices apart (for example a bike number), so the rider can pick,
 - after how long without a packet the values read as zero.
 
+The table language stays clearly data: conditions, masks and arithmetic, but no loops and nothing
+that amounts to a script. That keeps tables reviewable by non-programmers and safe to deliver to
+phone apps.
+
 Tables live in this repo. Every table ships with a real capture and the expected output; the
 automated checks replay it.
 
@@ -77,34 +100,38 @@ tier, source identity), then sends compact values. An app can show and record a 
 heard of.
 
 - Events are sent immediately; sampled values may be batched.
-- When OFP runs inside the app, the app receives the same messages directly, with no radio in
-  between. When OFP runs as a separate bridge, the same messages travel over BLE or the network.
-  The app-side code is the same either way.
+- When OFP Core runs inside the app, the app receives the same messages directly, with no radio in
+  between. When OFP Connect is used, the same messages travel over BLE or the network. The app-side
+  code is the same either way.
+- Where a Bluetooth standard already exists for a value, a Connect can also offer it in that
+  standard form, so apps that know nothing about OFP still work.
 
 ## Where OFP runs
 
-- **The OFP library** — the core, embedded in an app. It contains **no Bluetooth**: the app passes
-  in what its own Bluetooth layer hears and performs the writes the library asks for. This is how
-  an app adds OFP without a second Bluetooth stack fighting its own.
-- **An OFP bridge** (later) — the same library with its own radio and its own outputs: an ESP32
-  stick, a desktop background app, or an Android app.
+- **OFP Core** contains **no Bluetooth**: the app passes in what its own Bluetooth layer hears and
+  performs the writes Core asks for. This is how an app adds OFP without a second Bluetooth stack
+  fighting its own. Ready-made Bluetooth glue for common platforms can be contributed to this repo
+  for apps that have none.
+- **OFP Connect** (later) is Core with its own radio and its own outputs.
 
-The small interface between the library and its host (advertisement seen, connect, subscribe,
-read, write, disconnected) is part of the standard and is frozen like stable fields. Broadcast-only
-devices put one real requirement on the host: continuous scanning with duplicates during the
-session.
+The small interface between Core and its host (advertisement seen, connect, subscribe, read, write,
+disconnected) is part of the standard and is frozen like stable fields. It does not assume a single
+radio. Broadcast-only devices put one real requirement on the host: continuous scanning with
+duplicates during the session.
 
-The core is written in **Rust** and compiled for desktop, iOS, Android and microcontrollers, so a
-table behaves the same everywhere. The automated checks apply a microcontroller's memory and time
-limits from the start, so everything written before the stick exists will run on it.
+Core is written in **Rust** and compiled for desktop, iOS, Android and microcontrollers, so a table
+behaves the same everywhere. The automated checks apply a microcontroller's memory and time limits
+from the start, so everything written before the stick exists will run on it.
 
-Phones:
+### Phones
 
-- **iPhone** — the library inside each app, or a stick. A separate background app cannot reliably
-  serve another app on the same phone. Several apps can share one sensor connection, so two apps
-  that each embed the library do not fight over a device.
-- **Android** — the library, or a standalone bridge app running as a foreground service that other
-  apps reach over loopback.
+- **iPhone: readers and tables only.** An iPhone app does not load code from a URL (app-store rules
+  on downloaded code). A device that needs code reaches an iPhone through an OFP Connect, which
+  runs the plugin and sends ordinary fields. A new reader reaches iPhone with an app update; new
+  tables arrive live, because they are data. Several apps can share one sensor connection, so two
+  apps that each embed Core do not fight over a device.
+- **Android:** Core inside the app, or a standalone Connect app running as a foreground service
+  that other apps reach over loopback.
 
 ## What a consuming app does
 
@@ -118,11 +145,16 @@ Phones:
 
 ## Rules of the official registry
 
-- **Tables only.** The official registry hosts tables, never code. A table cannot perform a
-  handshake or decrypt anything.
+- **Tables only.** The registry hosts tables, never code. A table cannot perform a handshake or
+  decrypt anything.
 - **No unlocks.** A table may decode what a device sends openly. Nothing in the registry may defeat
   authentication, encryption or pairing that the maker put there to restrict access. Edge cases
   (a fixed "start sending" command) are ruled on one by one and the rulings are kept in the repo.
+- **Own work only.** A table comes from the contributor's own captures or from the maker's public
+  documentation. What a device's bytes mean may be learned from anywhere, including other
+  projects' source code, but nothing is copied from projects under incompatible licenses (for
+  example GPL): no code, comments, names or structure. Each table notes where its knowledge came
+  from and which firmware it was verified on.
 - **Verification levels.**
 
   | Level | What it takes |
@@ -130,11 +162,13 @@ Phones:
   | Submitted | The author's capture, replayed by the automated checks |
   | Confirmed | A second person with the same device adds a capture or signs off |
   | Field-proven | Apps report that real riders connected and got sensible data |
+  | Maintained | The above, plus a named person who answers when a firmware update breaks it |
 
   The core checks every value against the field's plausible range. Apps may report anonymous,
   opt-in counts (table, version, device firmware, share of packets decoded, values in range — no
   rider, no values) by submitting periodic summaries to this repo. A table that starts failing
-  drops a level and its author is told.
+  drops a level and its author is told. A device with a single owner can stay at "submitted" with a
+  mild note.
 
 ## Your own plugins, by URL (later)
 
@@ -145,40 +179,49 @@ People can do what they want on their own install.
 - A URL plugin may be **code**. It runs in a WebAssembly sandbox whose entire outside world is:
   receive a packet from its device, write to its device, set a timer, emit a field, write a log
   line. No files, no network, nothing about the rider or the app. Memory and time per call are
-  capped. *Unproven on microcontrollers; app-store rules for downloaded code on iPhone need
-  checking.*
-- The rider attaches it to a device explicitly; it is pinned to the version they approved; its
-  fields stay labelled unreviewed. Sending commands to the device is a declared permission, off by
-  default.
-- The project does not host or list such plugins.
+  capped. *Unproven on microcontrollers.*
+- The rider attaches it to a device explicitly; it is pinned to the exact content they approved, so
+  a changed file at the same URL asks again; its fields stay labelled unreviewed. Sending commands
+  to the device is a declared permission, off by default.
+- **Where it works:** in desktop and Android apps, and on any OFP Connect. Not inside iPhone apps.
+- The project does not host or list such plugins. What people load is their own choice and
+  responsibility.
 
 This is also the development loop: write a table, host it anywhere, load it by URL, ride with it,
 then submit the same file as a pull request.
 
 URL plugins are the lab. When several of them need the same thing (for example values split across
 packets), that pattern can be proposed as a new reader. Once it is in the core, those devices
-become tables and can enter the official registry.
+become tables, can enter the official registry, and start working on iPhone.
 
 ## Later, and optional
 
 None of these changes the four core parts.
 
-- **Bridges** — the ESP32 stick (flashed from a web page), the desktop app, the Android app.
+- **OFP Connect** — the ESP32 stick (flashed from a web page), the desktop app, the Android app.
 - **The remote** — a small frozen set of requests (info, scan, connect / forget, install, status)
-  in the same profile as the data, so a bridge with no screen is set up from inside whichever app
-  the rider uses. The bridge owns the sensor connections, stores its own configuration, and lets
-  one app configure at a time.
+  in the same profile as the data, so a Connect with no screen is set up from inside whichever app
+  the rider uses, including handing it the WiFi name and password. The Connect owns the sensor
+  connections, stores its own configuration, and lets one app configure at a time.
 - **Transports** — BLE; GATT tunnelled over TCP with mDNS discovery (documented here, compatible
   with the "direct connect" model trainers use); loopback on the same computer; WebSocket, which
   also lets browser apps and simple scripts connect.
+- **Many devices, many apps** — over the network one connection carries many devices, each a
+  separate source, to several apps at once. The stream says when a source appears and disappears,
+  and an app can subscribe to only the sources it wants. Source identity comes from the device, not
+  from the Connect that heard it, so two Connects hearing the same device do not create two
+  sources. Broadcast devices have no connection limit, so one Connect can hear a whole room of
+  bikes.
+- **More radios and more outputs** — a Connect may use several Bluetooth adapters (more sensor
+  connections, or one radio that only listens and one that only serves apps), and may offer several
+  outputs: OFP, or separate standard devices such as a bike and a heart-rate strap, each with its
+  own address on chips that support that.
 - **Local push** — anything that is not BLE (a script, a camera tool, a DIY board) sends fields in
   over loopback or WebSocket.
 - **Cloud relay** — the same messages through a server. The protocol can describe it so anyone can
   run one; the project does not host one.
 - **Inputs** — buttons, shifters and steering are event fields. OFP mirrors OpenBikeControl's
   inputs and can speak it outward instead of defining a competing vocabulary.
-- **Existing standards outward** — a bridge can also expose plain Heart Rate / Cycling Power / FTMS
-  so apps that know nothing about OFP still work.
 - **Control** — telling a trainer what to do is out of scope for now. Reserved at almost no cost: a
   version byte in the description, a read/write flag on every field, a reserved control
   characteristic. Until it exists, an OFP-only app can read a trainer but not control it.
@@ -187,7 +230,7 @@ None of these changes the four core parts.
 
 Small enough to hold in your head:
 
-- the library (Rust core, no Bluetooth),
+- OFP Core (Rust, no Bluetooth),
 - the broadcast reader,
 - one table: the Keiser M3i, whose broadcast needs conditions, a bit mask, arithmetic, a bike-number
   picker and a staleness time,
@@ -196,7 +239,8 @@ Small enough to hold in your head:
 - running inside one desktop app, checked against packets with known answers and against an
   existing hardware bridge for the same bike.
 
-Next: a device that connects and notifies (the notify reader), then the standard-profile readers.
+Next: a second, unrelated broadcast device (to prove the reader is generic), then a device that
+connects and notifies, then the standard-profile readers.
 
 The repo becomes public when the first version runs end to end, a newcomer can add a field and a
 table by following the README, and the license, governance and contributing documents exist.
@@ -210,17 +254,43 @@ table by following the README, and the license, governance and contributing docu
 - Created and maintained by TrainerDay, open to everyone. Maintainers are added from people whose
   tables, fields and readers have been merged.
 - Anything calling itself OFP-compatible passes the conformance tests in this repo.
-- License: undecided. Working assumption: a permissive license with a patent grant for code and an
-  open documentation license for the specification.
+- **AI-assisted contributions are welcome.** Say so in the pull request; a human is responsible for
+  it; the capture replay judges it like any other.
+
+### License and money
+
+- **Apache-2.0 for everything** in this repo — code, tables and documents. Any app, open or closed,
+  can embed OFP, and contributions carry a patent grant.
+- **Sign-off, not a contributor agreement.** Contributors add a "Signed-off-by" line (Developer
+  Certificate of Origin).
+- **No fees, ever.** No paid tiers, no certification fees. Nobody makes money from the protocol.
+- **The name is protected** only so that "OFP compatible" means "passes the conformance tests".
 
 ## Related work
 
+Projects this design learns from, and how it relates to them:
+
 - **Heart Rate, Cycling Power, Speed and Cadence, Running Speed, FTMS** — the Bluetooth standards
   OFP reads and imports as fields.
-- **QZ (qdomyos-zwift)** — a bridge that makes many proprietary machines appear as standard
-  trainers, including control. OFP does not try to replace it.
-- **OpenBikeControl** — an open protocol for buttons and other inputs.
-- **FIT developer fields and USB HID descriptors** — the models for self-describing data.
+- **QZ (qdomyos-zwift)** — the project that showed how much riders want their equipment to work
+  everywhere. It bridges many machines to standard trainers, including control, which OFP does not
+  do.
+- **OpenBikeControl** — an open protocol for buttons and other inputs, which grew out of a working
+  app first.
+- **Buttplug.io / Intiface** — a Rust device library with a device configuration file, a
+  user-supplied one, and a standalone app serving other apps.
+- **Theengs Decoder** — data-file decoders for broadcast-only BLE devices, tested with captured
+  advertisements.
+- **BTHome** — an open broadcast format that devices emit natively.
+- **OpenTelemetry semantic conventions** — a registry with stability tracked per field.
+- **Zigbee2MQTT external converters** — user-loaded device support next to a reviewed set.
+- **Kaitai Struct, CAN DBC files** — conditions, bit fields and scale factors written as data.
+- **FIT developer fields, USB HID descriptors, GoldenCheetah XDATA** — self-describing and
+  extensible data series.
+
+Lessons taken from them: ship a working thing first and let the protocol follow; test every device
+definition against captured traffic; keep the data format constrained and give code a separate,
+deliberate escape hatch; write down change rules and patent terms early.
 
 ## Open questions
 
@@ -229,9 +299,10 @@ table by following the README, and the license, governance and contributing docu
 - How official tables are signed and delivered to apps (a signed index on static hosting is the
   working idea), and offline behaviour.
 - How long "no objection" lasts and how many approvals a stable change needs.
-- WebAssembly on a microcontroller next to two BLE roles on one radio.
-- App-store rules for URL-loaded code on iPhone.
+- WebAssembly on a microcontroller next to two BLE roles on one radio, and which runtime.
+- Which microcontroller is the reference for the stick.
 - Whether offering a URL loader carries legal exposure when people load unlock plugins (a question
   for a lawyer).
-- License.
-- What to call the pieces: "library" and "bridge" are working names.
+- Whether a heavier specification license is needed later, if a hardware maker asks for one.
+- To confirm at the source: the current state of the ANT+ and Bluetooth standards processes for new
+  sensor types.
