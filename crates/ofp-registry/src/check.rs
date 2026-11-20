@@ -312,7 +312,11 @@ mod tests {
 
     /// A copy of the real registry with one text replaced in one file.
     fn altered(name: &str, file: &str, from: &str, to: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("ofp-check-{name}-{}", std::process::id()));
+        // One folder per call: tests run side by side, and two of them asking for the same name used to
+        // share a folder (one deleting it while the other read it).
+        static CALL: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let call = CALL.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("ofp-check-{name}-{}-{call}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         for sub in ["fields", "tables"] {
             std::fs::create_dir_all(dir.join(sub)).unwrap();
