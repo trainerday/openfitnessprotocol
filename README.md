@@ -278,18 +278,33 @@ the TrainerDay desktop app; the project is new. Tables can be written for device
 their Bluetooth broadcast and for devices you connect to that simply notify. In the two apps, only
 the broadcast kind is wired in so far.
 
-## Devices in the registry
+## Devices
 
-| Device | How it is read | State |
-|---|---|---|
-| Keiser M3i indoor bike | broadcast | checked against a real ride |
-| CORE body temperature sensor | broadcast (core temperature) | **draft**, from the maker's published notes; not tried on a sensor |
-| CORE body temperature sensor | connected (core and skin temperature, heart rate, heat strain) | **draft**, from the maker's published specification |
-| Tymewear VitalPro breathing sensor | connected (breathing rate, tidal volume, ventilation) | **draft**, from others' published findings ([facts](registry/tables/tymewear-vitalpro.spec.md)) |
+**Verified** (checked on a real device):
 
-Own one of the drafts' devices? Run `npm start`, pick the device, open **Live**, and say for each value
-whether it is right. That is what turns a draft into a verified table. If something is wrong, the
-recording you download holds what an assistant needs to fix it.
+| Device | What OFP reads |
+|---|---|
+| Heart rate straps (the Bluetooth Heart Rate standard) | heart rate |
+| Power meters (the Bluetooth Cycling Power standard) | power, cadence, speed |
+| Speed and cadence sensors (the Bluetooth standard) | speed, cadence |
+| Smart trainers and spin bikes speaking FTMS (Wahoo KICKR, Tacx, Elite, Saris, Schwinn IC4 / Bowflex C6, Stages, Wattbike, newer Yesoul and Domyos, and many more) | power, cadence, speed, distance, resistance, heart rate |
+| Keiser M3i indoor bike | power, cadence, heart rate, gear, energy, distance, time |
+
+**Not verified yet** (written from published specifications or other projects' findings, waiting for an
+owner to check them in OFP Studio):
+
+| Device | What OFP reads |
+|---|---|
+| Running speed and cadence sensors (the Bluetooth standard) | speed, running cadence |
+| FTMS rowers (Concept2 and others) and treadmills | rower: stroke rate and count, power, distance; treadmill: speed, incline, distance |
+| CORE body temperature sensor | core and skin temperature, heart rate, heat strain |
+| Tymewear VitalPro breathing sensor | breathing rate, tidal volume, ventilation |
+| Domyos bikes without FTMS, older Yesoul bikes, iConsole+ consoles, Nautilus bikes | power or speed, cadence, resistance (each as it sends) |
+| Inspire IC, XCX and Chrono bikes | cadence, resistance, and power or speed where sent |
+
+OFP reads; it never controls a device. Own one of the devices that are not verified yet? Install
+[OFP Studio](https://openfitnessprotocol.org/download), connect it, say whether each number looks right,
+and send it: that is what verifies it.
 
 ## Contributing
 

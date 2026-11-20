@@ -81,7 +81,18 @@ function home(latest) {
 <div class="hero">
   <h1>One library to read every fitness device.</h1>
   <p class="lead">Add OFP to your app once. You don't maintain code for each device: the community does. New devices come to your app with a simple library update: no code of yours changes.</p>
-  <div class="actions"><a class="button quiet" href="${REPO}/blob/main/docs/integrating.md">Add OFP to your app</a></div>
+  <div class="paths">
+    <div class="path">
+      <span class="who">Have a fitness device?</span>
+      <a class="button" href="/download">Download OFP Studio</a>
+      <span class="small">Test it in a minute · free · Mac and Windows</span>
+    </div>
+    <div class="path">
+      <span class="who">Developer with a fitness app?</span>
+      <a class="button quiet" href="${REPO}/blob/main/docs/integrating.md">Add OFP to your app</a>
+      <span class="small">One library · open source · Apache-2.0</span>
+    </div>
+  </div>
 </div>
 
 <section class="free" aria-label="Free and open source">
@@ -135,8 +146,29 @@ function home(latest) {
 </section>
 
 <section>
-  <h2>Devices so far</h2>
-  <p>The <b>Keiser M3i</b> bike, checked on a real ride. First versions for the <b>CORE</b> body temperature sensor and the <b>Tymewear VitalPro</b> breathing sensor, waiting for owners to test them.</p>
+  <h2>Devices</h2>
+  <div class="cards devices">
+    <div class="card yes"><h3><span class="mark-yes" aria-hidden="true">✓</span> Verified</h3>
+      <ul>
+        <li><b>Heart rate straps</b> (Bluetooth standard)</li>
+        <li><b>Power meters</b>: power, cadence, speed</li>
+        <li><b>Speed and cadence sensors</b></li>
+        <li><b>Smart trainers and spin bikes with FTMS</b>: Wahoo KICKR, Tacx, Elite, Saris, Schwinn IC4 / Bowflex C6, Stages, Wattbike, newer Yesoul and Domyos, and many more</li>
+        <li><b>Keiser M3i</b> bike</li>
+      </ul>
+    </div>
+    <div class="card"><h3>Not verified yet</h3>
+      <ul>
+        <li>Running speed and cadence sensors</li>
+        <li>FTMS rowers (Concept2 and others) and treadmills</li>
+        <li>CORE body temperature sensor</li>
+        <li>Tymewear VitalPro breathing sensor</li>
+        <li>Domyos bikes without FTMS, older Yesoul, iConsole+ consoles, Nautilus</li>
+        <li>Inspire IC, XCX, Chrono bikes</li>
+      </ul>
+      <p class="small">Own one? Connect it in OFP Studio, check the numbers, and send it. That is what verifies it.</p>
+    </div>
+  </div>
   <p class="small">OFP is new: this is its first version, and things can still change before 1.0.</p>
 </section>
 `,

@@ -93,3 +93,8 @@ footer.bottom p { margin: 4px 0; }
 #shot-big::backdrop { background: rgba(10, 10, 20, .75); }
 #shot-big img { display: block; max-width: 92vw; max-height: 88vh; border-radius: 10px; }
 @media (max-width: 640px) { .shots { grid-template-columns: 1fr; } }
+.paths { display: flex; gap: 28px; flex-wrap: wrap; margin-top: 6px; }
+.path { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.path .who { font-size: 14px; font-weight: 600; color: var(--text); }
+.devices ul { margin: 6px 0 10px; padding-left: 18px; }
+.devices li { margin: 4px 0; color: var(--text); font-size: 15px; }
