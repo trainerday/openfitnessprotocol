@@ -9,6 +9,8 @@ fixes are folded into a last "Bug fixes and improvements". Notes for the next re
 
 ## Next
 
+- A simpler Studio: connect your device, check your numbers, and send the recording to us with one
+  button. The full Studio is under Advanced.
 - Reads the standard sensors: heart rate straps, power meters, speed and cadence sensors, running
   sensors, and FTMS bikes, rowers and treadmills. Reading only: OFP never controls a device.
 - First drafts for three more spin bikes: Inspire IC, XCX and Chrono, waiting for owners to test them.

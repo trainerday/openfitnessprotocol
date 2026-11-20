@@ -49,6 +49,8 @@ a plugin a way to reach outside it is refused.
 - **Unreviewed plugins are the rider's own choice.** The project does not host, list or review them. The
   sandbox limits what one can reach; it does not make what it says about a device true.
 - **A recording can hold personal data** (a heart rate, a device's name or number). Look at a recording
-  before you attach it to an issue or a pull request.
+  before you attach it to an issue or a pull request. A recording sent with **Send to OFP** in the Studio
+  is not public: it is kept privately for 90 days, read only by the maintainers, and used only to add or
+  fix that device.
 - **Tables marked `draft` or `experimental`** have not been confirmed by enough owners to be trusted for
   anything but trying them.

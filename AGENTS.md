@@ -198,6 +198,9 @@ ofp check                                 must print "ok"
 git commit -s                             sign-off (Developer Certificate of Origin)
 ```
 
+A code like `OFP-7K3Q-2M` is a recording someone sent from the Studio ("Send to OFP"), with their
+answers and comment in it: a maintainer fetches it with `scripts/submissions.sh get <code>`.
+
 The Studio's API (`docs/studio.md`) does every step except the notes and confirmations, which
 need a person at the device. This file is served at `GET /api/guide`.
 

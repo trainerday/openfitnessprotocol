@@ -4,6 +4,9 @@
 
 const S = {
   tab: 'devices',
+  // the full Studio (tabs for writing tables); off = the simple Connect, check, send
+  advanced: localStorage.getItem('ofp-advanced') === '1',
+  sent: null,         // { code } once this recording was sent to the project
   state: null,        // GET /api/state
   devices: [],
   captures: [],
@@ -130,7 +133,7 @@ function connectEvents() {
   es.onmessage = guard(async (ev) => {
     const m = JSON.parse(ev.data);
     switch (m.type) {
-      case 'devices': S.devices = m.devices; if (S.tab === 'devices') renderDevicesTable(); break;
+      case 'devices': S.devices = m.devices; if (S.tab === 'devices') renderDevicesTable(); if (!S.advanced) renderDeviceCards(); break;
       case 'packet':
         S.lastPacketAt = Date.now();
         if (S.capture) S.capture.packets.push([m.t, m.stream, m.hex]);
@@ -138,10 +141,10 @@ function connectEvents() {
         if (!S.stream) { S.stream = m.stream; render(); } else renderSoon();
         break;
       case 'tx': Tester.onTx(m); if (m.error) toast(m.error, true); renderSoon(); break;
-      case 'note': if (S.capture) S.capture.notes.push(m); if (S.tab === 'live') renderTiles(); else render(); break;
+      case 'note': if (S.capture) S.capture.notes.push(m); if (showingLive()) renderTiles(); else render(); break;
       case 'confirm': if (S.capture) S.capture.confirms.push(m); renderSoon(); break;
-      case 'source': S.live.source = m.source; if (S.tab === 'live') renderTiles(); break;
-      case 'values': Object.assign(S.live.values, m.fields); S.live.stale = !!m.stale; for (const k of m.out_of_range || []) delete S.live.values[k]; if (S.tab === 'live') renderTiles(); break;
+      case 'source': S.live.source = m.source; if (showingLive()) renderTiles(); break;
+      case 'values': Object.assign(S.live.values, m.fields); S.live.stale = !!m.stale; for (const k of m.out_of_range || []) delete S.live.values[k]; if (showingLive()) renderTiles(); break;
       case 'recording': if (m.on) S.lastPacketAt = null; await loadState(); render(); break;
       case 'session': S.sel = []; S.expr = ''; S.series = null; S.solve = null; S.checked = null; S.saved = null; S.yamlDirty = false; S.live = { source: null, values: {}, stale: false }; await reload(); break;
       case 'draft': S.yaml = m.yaml || ''; S.yamlDirty = false; await loadState(); render(); break;
@@ -194,7 +197,9 @@ function render() {
   renderChip();
   renderBanner();
   const main = $('#main');
-  const view = { devices: viewDevices, record: viewRecord, map: viewMap, live: viewLive, save: viewSave, tester: viewTester, recordings: viewRecordings }[S.tab]();
+  document.body.classList.toggle('simple', !S.advanced);
+  $('#advanced').checked = S.advanced;
+  const view = !S.advanced ? viewSimple() : { devices: viewDevices, record: viewRecord, map: viewMap, live: viewLive, save: viewSave, tester: viewTester, recordings: viewRecordings }[S.tab]();
   main.replaceChildren(view);
   renderLive();
 }
@@ -205,7 +210,7 @@ function renderLive() {
   const st = $('#rec-stats');
   if (st) fillStats(st);
   if (S.tab === 'tester') renderTester();
-  if (S.tab === 'live') renderTiles();
+  if (showingLive()) renderTiles();
 }
 
 function needSession(title) {
@@ -261,7 +266,8 @@ const STANDARD_SERVICES = { '1826': 'FTMS', '1818': 'Cycling Power', '1816': 'Sp
 /** What reads this device: an OFP table, standard profiles, or nothing yet. */
 function readsAs(d) {
   const by = [];
-  if (d.known) by.push(d.known);
+  // a Fitness Machine says which kind it is (bike, rower, treadmill) only by what it sends once connected
+  if (d.known) by.push(d.known.startsWith('Fitness machine') ? 'Fitness machine (FTMS)' + (d.known.includes(' · ') ? d.known.slice(d.known.indexOf(' · ')) : '') : d.known);
   // a standard the core already names (its table "Heart Rate", "Fitness machine (bike)", …) is not repeated
   const named = (d.known || '').toLowerCase();
   for (const u of d.services) {
@@ -807,9 +813,10 @@ function renderTiles() {
   if (status) {
     const quietFor = S.lastPacketAt ? Math.round((Date.now() - S.lastPacketAt) / 1000) : null;
     let cls = 'listening', big, small = '';
-    if (!s || !s.recording) { cls = 'stopped'; big = 'Stopped'; small = 'Nothing is being read. Press “Start again” to listen.'; }
+    if (!s || !s.recording) { cls = 'stopped'; big = 'Stopped'; small = S.advanced ? 'Nothing is being read. Press “Start again” to listen.' : ''; }
     else if (quietFor === null) { big = 'Listening… nothing received yet'; small = 'Wake the device: pedal, press a button, put the strap on.'; }
     else if (quietFor > 8) { cls = 'quiet'; big = `Nothing received for ${quietFor} s`; small = 'The device has gone quiet, or is out of range.'; }
+    else if (!groups.length && !S.advanced) { big = 'We can hear your device, but OFP can\'t read its numbers yet'; small = 'That is fine: keep it going for a minute, then send it to us below. That is how a device gets added.'; }
     else if (!groups.length) { big = 'Receiving data, but nothing reads it yet'; small = 'No table and no standard profile knows these packets. See them in Record, and map them in Map.'; }
     else { cls = 'receiving'; const n = groups.reduce((a, g) => a + g.tiles.filter((t) => t.value !== undefined).length, 0); big = `Receiving · ${n} value${n === 1 ? '' : 's'} reported`; }
     const text = big + '|' + small;
@@ -838,8 +845,8 @@ function renderTiles() {
         h('div', { class: 'desc muted' }, (fieldOf(t.key) && fieldOf(t.key).description) || ''),
         h('div', { class: 'verdict' }),
         h('div', { class: 'row' },
-          h('button', { class: 'small yes', onclick: () => sayRight(currentTile(t.id)) }, 'Yes, this is right'),
-          h('button', { class: 'small no', onclick: () => sayWrong(currentTile(t.id)) }, 'No, this is wrong'))))))));
+          h('button', { class: 'small yes', onclick: () => sayRight(currentTile(t.id)) }, S.advanced ? 'Yes, this is right' : 'Looks right'),
+          h('button', { class: 'small no', onclick: () => sayWrong(currentTile(t.id)) }, S.advanced ? 'No, this is wrong' : 'Looks wrong'))))))));
   }
   for (const g of groups) for (const t of g.tiles) {
     const tile = box.querySelector(`.tile[data-id="${t.id}"]`);
@@ -1086,6 +1093,152 @@ We are done when every value my device sends is on the Live step, I have marked 
   dlg.showModal();
 }
 
+// ───────────────────────── the simple Studio: Connect, check, send ─────────────────────────
+
+/** Is the live view on screen (the Live tab, or the simple Studio with a device connected)? */
+function showingLive() {
+  return S.tab === 'live' || (!S.advanced && !!session());
+}
+
+/** Where "Send to OFP" goes. `?submit=<url>` on the page points it elsewhere (for testing). */
+const SUBMIT = new URLSearchParams(location.search).get('submit') || 'https://openfitnessprotocol.org/api/submit';
+
+const connect = guard(async (d) => {
+  S.sent = null;
+  if (!(session() && session().device_id === d.device_id)) {
+    await api('/api/session', { device_id: d.device_id });
+    await api('/api/record/start', {});
+  } else if (!session().recording) {
+    await api('/api/record/start', {});
+  }
+  await reload();
+});
+
+const chooseAnother = guard(async () => {
+  if (session() && session().recording) await api('/api/record/stop', {});
+  await api('/api/session', {}).catch(() => {});
+  S.sent = null;
+  await reload();
+});
+
+function viewSimple() {
+  const s = session();
+  if (S.sent) return viewSent();
+  if (!s || s.from_file) return viewConnect();
+  return viewCheck(s);
+}
+
+/** Step 1: the devices nearby, as big cards with one Connect button each. */
+function viewConnect() {
+  const wrap = h('div', { class: 'simple-page' },
+    h('div', { class: 'steps' }, h('span', { class: 'on' }, '1 Connect'), h('span', {}, '2 Check your numbers'), h('span', {}, '3 Send')),
+    h('h1', {}, 'Connect your device'),
+    h('p', { class: 'lead' }, 'Wake it up first: pedal, press a button, or put the strap on. It appears here within a few seconds.'),
+    h('div', { id: 'cards-readable', class: 'cards' }),
+    h('div', { id: 'cards-maybe-wrap', hidden: true }, h('h2', {}, 'Looks like a fitness device'), h('p', { class: 'muted' }, 'OFP can\'t read these yet. Connect yours anyway and send it to us: that is how it gets added.'), h('div', { id: 'cards-maybe', class: 'cards' })),
+    h('div', { id: 'cards-others-wrap' }, h('button', { id: 'others-toggle', class: 'linkish', onclick: () => { showOthers = !showOthers; renderDeviceCards(); } }), h('div', { id: 'cards-others', class: 'cards' })),
+    h('div', { id: 'cards-empty', class: 'empty-note' }));
+  setTimeout(renderDeviceCards);
+  return wrap;
+}
+
+const cardEls = new Map(); // device id → its card, updated in place so nothing jumps under the pointer
+
+function renderDeviceCards() {
+  const boxes = { readable: $('#cards-readable'), maybe: $('#cards-maybe'), others: $('#cards-others') };
+  if (!boxes.readable) return;
+  const counts = { readable: 0, maybe: 0, others: 0 };
+  const seen = new Set();
+  const last = { readable: null, maybe: null, others: null };
+  for (const d of S.devices) {
+    seen.add(d.device_id);
+    const by = readsAs(d);
+    const group = by.length ? 'readable' : looksLikeFitness(d) ? 'maybe' : 'others';
+    counts[group]++;
+    let card = cardEls.get(d.device_id);
+    if (!card) {
+      card = h('div', { class: 'device-card' }, h('div', { class: 'title' }), h('div', { class: 'what' }), h('button', { class: 'connect', onclick: () => connect(d) }, 'Connect'));
+      cardEls.set(d.device_id, card);
+    }
+    const box = boxes[group];
+    const want = last[group] ? last[group].nextSibling : box.firstChild;
+    if (want !== card) box.insertBefore(card, want);
+    last[group] = card;
+    const quiet = d.silent_s > DEVICE_QUIET_S;
+    const set = (el, text) => { if (el.textContent !== text) el.textContent = text; };
+    set(card.children[0], d.name || 'A device with no name');
+    // what reads it, without the device's own name repeated after it
+    const what = by.map((b) => b.split(' · ')[0]).filter((b, i, all) => all.indexOf(b) === i);
+    set(card.children[1], quiet ? 'Not heard for a while: wake it up' : what.length ? 'OFP reads it: ' + what.join(', ') : 'OFP can\'t read it yet');
+    card.classList.toggle('quiet', quiet);
+    card.children[2].disabled = quiet;
+  }
+  for (const [id, card] of cardEls) if (!seen.has(id)) { card.remove(); cardEls.delete(id); }
+  $('#cards-maybe-wrap').hidden = !counts.maybe;
+  boxes.others.hidden = !showOthers;
+  const t = $('#others-toggle');
+  const things = counts.others === 1 ? 'the 1 other thing nearby' : `the ${counts.others} other things nearby`;
+  t.hidden = !counts.others;
+  t.replaceChildren(...(showOthers ? [`Hide ${things}`] : [h('b', { style: 'text-decoration:underline' }, "Don't see your device?"), ` Show ${things}`]));
+  const empty = $('#cards-empty');
+  const text = counts.readable || counts.maybe ? '' : S.radio.startsWith('error') ? S.radio.slice(7) : S.radio === 'off' ? 'This build has no Bluetooth.' : 'Listening… wake your device.';
+  if (empty.textContent !== text) empty.textContent = text;
+}
+
+/** Steps 2 and 3: the numbers, right or wrong, a comment, and Send. */
+function viewCheck(s) {
+  const comment = h('textarea', { id: 'send-comment', rows: 3, placeholder: 'A number that is missing, one that is always 0, the display shows something else, …' });
+  const email = h('input', { id: 'send-email', type: 'email', placeholder: 'you@example.com (optional)' });
+  const send = guard(async () => {
+    const button = $('#send-button');
+    button.disabled = true;
+    button.textContent = 'Sending…';
+    try {
+      // the comment goes into the recording too, with the time, while it is still recording
+      if (comment.value.trim()) await api('/api/note', { text: 'COMMENT: ' + comment.value.trim() }).catch(() => {});
+      if (session() && session().recording) await api('/api/record/stop', {});
+      const recording = await (await fetch('/api/capture/file', { cache: 'no-store' })).text();
+      const src = S.live.source;
+      const r = await fetch(SUBMIT, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ recording, comment: comment.value.trim(), email: email.value.trim(), version: S.state && S.state.version, device: s.name, read_as: src ? src.name : 'nothing reads it yet' }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.code) throw new Error(j.error || 'Sending did not work. Check the internet connection and try again.');
+      S.sent = { code: j.code, name: s.name };
+      await reload();
+    } catch (e) {
+      button.disabled = false;
+      button.textContent = 'Send to OFP';
+      throw e;
+    }
+  });
+  return h('div', { class: 'simple-page' },
+    h('div', { class: 'steps' }, h('span', { class: 'done' }, '1 Connect'), h('span', { class: 'on' }, '2 Check your numbers'), h('span', {}, '3 Send')),
+    h('div', { class: 'row', style: 'justify-content:space-between; align-items:baseline' },
+      h('h1', {}, s.name), h('button', { class: 'linkish', onclick: chooseAnother }, 'Choose another device')),
+    h('p', { class: 'lead' }, 'Use your device normally and compare with its own display. For each number: does it look right? They move, so close is right.'),
+    h('div', { id: 'live-status', class: 'live-status' }), h('div', { id: 'tiles' }),
+    h('div', { class: 'panel send' },
+      h('h2', {}, '3 Send it to us'),
+      h('label', {}, 'Anything missing or wrong? Tell us'), comment,
+      h('label', {}, 'Your email, only if you want us to reply'), email,
+      h('p', { class: 'muted small-print' }, 'We receive what your device sent while it was connected, your answers above, your comment and your email if you give one. A recording can include your heart rate. It is kept privately for 90 days, read only by the people who maintain OFP, and used only to add or fix your device.'),
+      h('button', { id: 'send-button', class: 'connect', onclick: send }, 'Send to OFP')));
+}
+
+function viewSent() {
+  const issue = `https://github.com/trainerday/openfitnessprotocol/issues/new?template=device-request.yml&title=${encodeURIComponent('Recording ' + S.sent.code + ': ' + S.sent.name)}`;
+  return h('div', { class: 'simple-page' },
+    h('div', { class: 'steps' }, h('span', { class: 'done' }, '1 Connect'), h('span', { class: 'done' }, '2 Check your numbers'), h('span', { class: 'done' }, '3 Send')),
+    h('h1', {}, 'Thank you'),
+    h('p', { class: 'lead' }, 'Your recording is with us. Its code is'),
+    h('div', { class: 'code' }, S.sent.code),
+    h('p', {}, 'Keep the code: it is how we find your recording. If you want to follow along, ', h('a', { href: issue, target: '_blank', rel: 'noopener' }, 'open an issue on GitHub'), ' with the code in it. Someone (or an AI assistant) can now work out your device from what it sent, and you get it in a later version of OFP Studio.'),
+    h('div', { class: 'row' }, h('button', { class: 'connect', onclick: () => { S.sent = null; chooseAnother(); } }, 'Connect another device')));
+}
+
 // ───────────────────────── version, and a newer release ─────────────────────────
 
 /** Where releases are published. `?updates=<url>` points the check elsewhere (for testing the banner). */
@@ -1125,7 +1278,8 @@ async function checkForUpdate() {
 
 // ───────────────────────── start ─────────────────────────
 
-setInterval(() => { if (S.tab === 'live') renderTiles(); }, 1000);
+setInterval(() => { if (showingLive()) renderTiles(); }, 1000);
 document.querySelectorAll('#tabs button').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab)));
 $('#assistant-open').addEventListener('click', assistantDialog);
+$('#advanced').addEventListener('change', (e) => { S.advanced = e.target.checked; localStorage.setItem('ofp-advanced', S.advanced ? '1' : '0'); render(); });
 reload().then(() => { checkForUpdate(); if (session()) setTab(session().from_file ? 'map' : 'record'); connectEvents(); }).catch((e) => toast(e.message, true));

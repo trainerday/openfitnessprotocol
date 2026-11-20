@@ -159,8 +159,8 @@ function download(latest, changelog) {
   <ol class="steps">
     <li><b>Mac:</b> open the downloaded file and drag <b>OFP Studio</b> into Applications. <b>Windows:</b> run the installer.</li>
     <li>Start it. On a Mac, the first time, it asks to use Bluetooth: allow it. Bluetooth has to be on.</li>
-    <li>Wake your device (pedal, put the strap on). Find it in the list (or under <b>Don't see your device?</b>) and click <b>Use</b>.</li>
-    <li>On <b>Live</b>, say for each value whether it is right. <b>Stop and save</b> gives you one file to send.</li>
+    <li>Wake your device (pedal, put the strap on). Find it in the list (or under <b>Don't see your device?</b>) and click <b>Connect</b>.</li>
+    <li>Check your numbers: for each, <b>Looks right</b> or <b>Looks wrong</b>. Then <b>Send to OFP</b>, with a comment if something is missing. You get a code; we get the recording.</li>
   </ol>
 </section>
 

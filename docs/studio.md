@@ -42,7 +42,27 @@ Releases (Mac and Windows) are downloaded from https://openfitnessprotocol.org/d
 `openfitnessprotocol.org/download/latest.json`: when a newer version exists, a banner offers it (nothing is
 installed by itself). `?updates=<url>` on the page points that check elsewhere, for testing the banner.
 
-## The steps
+## The simple Studio: Connect, check your numbers, send
+
+What the Studio opens on, for anyone with a device and no interest in bytes:
+
+1. **Connect your device.** Large cards: the devices OFP reads first, then "Looks like a fitness
+   device", then everything else behind "Don't see your device?". **Connect** chooses the device and
+   starts recording what it sends.
+2. **Check your numbers.** The values in large type. Under each: **Looks right** / **Looks wrong** (the
+   same confirmations as Live). When OFP cannot read the device yet, it says so and asks for the
+   recording anyway.
+3. **Send it to us.** A comment ("Anything missing or wrong?"), an optional email, and **Send to OFP**:
+   the recording, with the answers and the comment in it, goes to `POST
+   https://openfitnessprotocol.org/api/submit`. The person gets a code like `OFP-7K3Q-2M`.
+
+**Advanced** (top right, remembered) shows the full Studio below. Sent recordings are kept privately in
+the R2 bucket `ofp-submissions` for 90 days (deleted by the bucket's own rule), at most 5 MB each, checked
+to be OFP recordings, two a minute per address. Maintainers read them with `scripts/submissions.sh list`
+and `scripts/submissions.sh get <code>` (into `captures/submitted/`). `?submit=<url>` on the page sends
+elsewhere, for testing.
+
+## The steps (Advanced)
 
 | Step | What you do |
 |---|---|

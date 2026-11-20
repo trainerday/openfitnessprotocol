@@ -108,3 +108,33 @@ a.btn { text-decoration: none; display: inline-block; }
 /* Devices: the heading of a group inside the table */
 tr.group td { padding-top: 18px; color: var(--muted); border-bottom: 1px solid var(--line, #e2e8f0); }
 tr.group td b { color: inherit; }
+
+/* ───────── the simple Studio ───────── */
+.simple #tabs, .simple #assistant-open, .simple #chip { display: none; }
+.switch { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); cursor: pointer; user-select: none; }
+.simple-page { max-width: 980px; margin: 0 auto; }
+.simple-page h1 { font-size: 30px; margin: 6px 0 6px; letter-spacing: -.01em; }
+.simple-page h2 { font-size: 19px; margin: 22px 0 6px; }
+.simple-page .lead { font-size: 17px; color: var(--muted); margin: 0 0 18px; max-width: 720px; }
+.steps { display: flex; gap: 8px; margin: 4px 0 18px; flex-wrap: wrap; }
+.steps span { font-size: 13px; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); background: var(--panel); }
+.steps span.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.steps span.done { color: var(--good); border-color: #b8e2cf; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-bottom: 8px; }
+.device-card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; gap: 6px; }
+.device-card .title { font-size: 18px; font-weight: 700; }
+.device-card .what { font-size: 14px; color: var(--muted); min-height: 20px; }
+.device-card.quiet { opacity: .5; }
+button.connect { background: var(--accent); border-color: var(--accent); color: #fff; font-size: 17px; font-weight: 700; padding: 12px 20px; border-radius: 10px; margin-top: 6px; }
+button.connect:disabled { opacity: .5; cursor: default; }
+button.linkish { background: none; border: 0; padding: 4px 0; color: var(--accent); font-size: 15px; cursor: pointer; }
+.empty-note { color: var(--muted); font-size: 16px; padding: 18px 0; }
+.simple .tile select, .simple .tile .desc { display: none; }
+.simple .tile .row button { font-size: 14px; padding: 7px 12px; }
+.panel.send { margin-top: 18px; }
+.panel.send label { display: block; font-weight: 600; margin: 12px 0 4px; }
+.panel.send textarea, .panel.send input { width: 100%; font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; }
+.small-print { font-size: 13px; margin: 12px 0 4px; }
+.code { font-family: var(--mono); font-size: 34px; font-weight: 700; letter-spacing: .06em; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 20px; display: inline-block; margin: 4px 0 14px; user-select: all; }
+.simple #banner, .simple .group-head .muted { display: none; }
+.simple .panel.send textarea { height: 84px; min-height: 0; resize: vertical; }

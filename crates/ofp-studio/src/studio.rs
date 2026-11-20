@@ -72,6 +72,8 @@ struct Session {
     live_source: Option<Value>,
     live_values: BTreeMap<String, f64>,
     live_source_id: Option<String>,
+    /// Every source the live core offered for this device, by id (what `source` events describe).
+    live_sources: BTreeMap<String, Value>,
 }
 
 impl Session {
@@ -350,6 +352,7 @@ impl Studio {
             live_source: None,
             live_values: BTreeMap::new(),
             live_source_id: None,
+            live_sources: BTreeMap::new(),
         });
         let v = session_json(st.session.as_ref().unwrap());
         drop(st);
@@ -386,6 +389,7 @@ impl Studio {
             live_source: None,
             live_values: BTreeMap::new(),
             live_source_id: None,
+            live_sources: BTreeMap::new(),
         });
         let v = session_json(st.session.as_ref().unwrap());
         drop(st);
@@ -445,6 +449,7 @@ impl Studio {
         s.live_core = live_core(registry.as_ref(), s.draft_yaml.as_deref());
         s.live_source = None;
         s.live_source_id = None;
+        s.live_sources.clear();
         s.live_values.clear();
         let connect_to = s.connect.then(|| s.device_id.clone()).flatten();
         let reply = session_json(s);
@@ -731,6 +736,7 @@ impl Studio {
             s.live_core = Some(draft.core());
             s.live_source = None;
             s.live_source_id = None;
+            s.live_sources.clear();
             s.live_values.clear();
             if s.connect {
                 let mut primed = Vec::new();
@@ -1081,6 +1087,7 @@ fn live_messages(s: &mut Session, messages: Vec<Message>, out: &mut Vec<Value>) 
     for m in messages {
         match &m {
             Message::SourceAppeared { source_id, .. } => {
+                s.live_sources.insert(source_id.clone(), serde_json::to_value(&m).unwrap_or_default());
                 // One source is shown as the device's table. A device's own table comes before a standard one
                 // (a bike with its own service and FTMS shows its own); the standard ones are shown by the
                 // Tester's readouts beside it.
@@ -1094,6 +1101,18 @@ fn live_messages(s: &mut Session, messages: Vec<Message>, out: &mut Vec<Value>) 
                     let v = serde_json::to_value(&m).unwrap_or_default();
                     s.live_source = Some(v.clone());
                     out.push(json!({ "type": "source", "source": v }));
+                }
+            }
+            // A device that matches several tables (an FTMS machine: bike, rower and treadmill data; a trainer
+            // with Speed and Cadence and Cycling Power) shows the one that actually sends values, while the one
+            // shown has sent none.
+            Message::Values { source_id, fields, .. } if s.live_source_id.as_ref() != Some(source_id) && s.live_values.is_empty() && !fields.is_empty() => {
+                if let Some(v) = s.live_sources.get(source_id).cloned() {
+                    s.live_source_id = Some(source_id.clone());
+                    s.live_source = Some(v.clone());
+                    out.push(json!({ "type": "source", "source": v }));
+                    s.live_values.extend(values_of(fields));
+                    out.push(json!({ "type": "values", "t": 0, "fields": fields, "out_of_range": [], "stale": false }));
                 }
             }
             Message::Values { source_id, fields, out_of_range, stale, t, .. } if s.live_source_id.as_ref() == Some(source_id) => {
