@@ -11,9 +11,9 @@ this project, to an AI assistant: it can set the device up for you.
 
 **OFP reads data; it does not control devices.**
 
-- ✅ **Reading:** a Concept2 rower, a power meter, a heart rate strap, a bike that only broadcasts its numbers, a
+- ✅ **Reading fitness data: yes.** a Concept2 rower, a power meter, a heart rate strap, a bike that only broadcasts its numbers, a
   breathing or temperature sensor, a smart trainer's power and cadence.
-- ❌ **Not today, control:** setting a trainer's resistance or ERG mode (a Wahoo KICKR is read, not steered), or a
+- ❌ **Controlling fitness devices: no.** setting a trainer's resistance or ERG mode (a Wahoo KICKR is read, not steered), or a
   treadmill's speed. Control may come later.
 
 > **Status: first version.** The core, the `ofp` command and one device (the Keiser M3i) work.

@@ -93,8 +93,8 @@ function home(latest) {
 <section class="scope">
   <h2>OFP reads data. It does not control devices.</h2>
   <div class="cards">
-    <div class="card yes"><h3><span class="mark-yes" aria-hidden="true">✓</span> Yes: reading</h3><p>A Concept2 rower's strokes and watts, a power meter, a heart rate strap, a bike that only broadcasts its numbers, a breathing or temperature sensor. A smart trainer's power and cadence too.</p></div>
-    <div class="card no"><h3><span class="mark-no" aria-hidden="true">✕</span> Not today: control</h3><p>Setting a smart trainer's resistance or ERG mode (a Wahoo KICKR is read, not steered), or changing a treadmill's speed. Your app keeps doing that the way it does now. Control may come later.</p></div>
+    <div class="card yes"><h3><span class="mark-yes" aria-hidden="true">✓</span> Reading fitness data: yes</h3><p>A Concept2 rower's strokes and watts, a power meter, a heart rate strap, a bike that only broadcasts its numbers, a breathing or temperature sensor. A smart trainer's power and cadence too.</p></div>
+    <div class="card no"><h3><span class="mark-no" aria-hidden="true">✕</span> Controlling fitness devices: no</h3><p>Setting a smart trainer's resistance or ERG mode (a Wahoo KICKR is read, not steered), or changing a treadmill's speed. Your app keeps doing that the way it does now. Control may come later.</p></div>
   </div>
 </section>
 
