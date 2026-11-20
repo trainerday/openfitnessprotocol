@@ -80,7 +80,7 @@ function home(latest) {
     body: `
 <div class="hero">
   <h1>One library to read every fitness device.</h1>
-  <p class="lead">Add OFP to your app once. You don't maintain code for each device: the community does, and new devices reach your app without a new release.</p>
+  <p class="lead">Add OFP to your app once. You don't maintain code for each device: the community does. A new device is a small data file, and it reaches your app when you update the library.</p>
   <div class="actions"><a class="button quiet" href="${REPO}/blob/main/docs/integrating.md">Add OFP to your app</a></div>
 </div>
 
@@ -88,6 +88,14 @@ function home(latest) {
   <div><b>100% free</b>No fees, no paid tiers, no account. Ever.</div>
   <div><b>Fully open source</b>Apache-2.0. Use it in any app, open or closed, commercial or not.</div>
   <div><b>For every app</b>Not tied to one company's app. Any app can use it, and anyone can add a device.</div>
+</section>
+
+<section class="scope">
+  <h2>OFP reads data. It does not control devices.</h2>
+  <div class="cards">
+    <div class="card yes"><h3>Yes: reading</h3><p>A Concept2 rower's strokes and watts, a power meter, a heart rate strap, a bike that only broadcasts its numbers, a breathing or temperature sensor. A smart trainer's power and cadence too.</p></div>
+    <div class="card no"><h3>Not today: control</h3><p>Setting a smart trainer's resistance or ERG mode (a Wahoo KICKR is read, not steered), or changing a treadmill's speed. Your app keeps doing that the way it does now. Control may come later.</p></div>
+  </div>
 </section>
 
 <section class="card spotlight">

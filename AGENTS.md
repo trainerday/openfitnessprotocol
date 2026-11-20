@@ -33,9 +33,9 @@ for AI assistants, and it is the first thing a reviewer looks at.
 
 - A pull request that adds or fixes a device touches **only `registry/`**: tables, fields, recordings,
   vectors, a spec file. Nothing in `crates/`, `packages/`, `scripts/` or `examples/`.
-- **Why it matters:** a table is data. Every app that uses OFP gets it without a new release, and the
-  automated check can judge it. A change to the core reaches a rider only after each app has shipped an
-  update, needs a full code review, and has to be right for every other device at once.
+- **Why it matters:** a table is data. The automated check can judge it, and an app picks it up by
+  updating its copy of the library, with nothing else to change. A change to the core needs a full code
+  review, has to be right for every other device at once, and asks more of every app that updates.
 - **Try the table first, properly.** Before deciding a table cannot do it: read the table language in
   `docs/design.md`, read the tables that exist, try both readers (`broadcast` for values in the
   advertisement, `notify` for a device that is connected to), and try conditions (`only_when`), masks and

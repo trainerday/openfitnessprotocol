@@ -9,6 +9,10 @@ repo, not in a committee.**
 device, click **Use**, and see what it sends. If nothing reads it yet, save the recording and give it, with
 this project, to an AI assistant: it can set the device up for you.
 
+**OFP reads data; it does not control devices.** It reads a Concept2 rower, a power meter, a heart rate strap, a
+smart trainer's power and cadence. It does not set a trainer's resistance or ERG mode (a Wahoo KICKR is read, not
+steered). Control may come later.
+
 > **Status: first version.** The core, the `ofp` command and one device (the Keiser M3i) work.
 > Everything can still change until 1.0. The details are in the [design document](docs/design.md).
 
@@ -164,9 +168,10 @@ The same core runs in both, so a table behaves the same everywhere.
 
 ## Add OFP to your app: about twenty lines
 
-**Add the library, wire it up once, and every device that gets a table works in your app the day
-the table is merged.** Tables are data, not code, so a new device reaches an app you shipped a
-year ago without an update, on iPhone too.
+**Add the library, wire it up once, and every device that gets a table works in your app.** Tables
+are data, not code: a new device reaches your app when you update the library, with no code of
+yours to change, on iPhone too. (Today the tables are built into the library. Fetching new tables
+while the app runs is planned, not built.)
 
 OFP has no Bluetooth of its own. It listens through your app's Bluetooth, so there are four small
 things to connect:

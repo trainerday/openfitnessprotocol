@@ -76,3 +76,7 @@ footer.bottom p { margin: 4px 0; }
 .free div:last-child { border-right: 0; }
 .free b { display: block; color: #fff; font-size: 18px; margin-bottom: 2px; }
 @media (max-width: 640px) { .free div { border-right: 0; border-bottom: 1px solid rgba(255,255,255,.08); } }
+
+.scope { padding-top: 6px; }
+.card.yes { border-left: 4px solid #12805c; }
+.card.no { border-left: 4px solid #c0362c; }

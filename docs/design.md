@@ -321,7 +321,8 @@ from the start, so everything written before the stick exists will run on it.
 - **iPhone: readers and tables only.** An iPhone app does not load code from a URL (app-store rules
   on downloaded code). A device that needs code reaches an iPhone through an OFP Connect, which
   runs the plugin and sends ordinary fields. A new reader reaches iPhone with an app update; new
-  tables arrive live, because they are data. Several apps can share one sensor connection, so two
+  tables could arrive live, because they are data (planned, not built: today the tables are compiled into
+  the library an app ships, and a new table reaches the app with an update of that library). Several apps can share one sensor connection, so two
   apps that each embed Core do not fight over a device.
 - **Android:** Core inside the app, or a standalone Connect app running as a foreground service
   that other apps reach over loopback.
