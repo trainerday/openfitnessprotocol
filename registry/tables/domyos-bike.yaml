@@ -1,0 +1,70 @@
+id: domyos-bike
+name: Domyos bike (without FTMS)
+reader: notify
+version: 1
+status: draft
+provenance: >
+  Written from domyos-bike.spec.md (facts learned from studying QZ, written down in a separate session;
+  this table was written without seeing QZ's code). Not yet checked on a bike. A Domyos bike that
+  advertises FTMS is read by std-ftms-bike.
+verified_on:
+  - not verified on a bike yet
+
+match:
+  - name_prefix: Domyos-Bike
+    service: 49535343-fe7d-4ae5-8fa9-9fafd205e455
+
+notify:
+  service: 49535343-fe7d-4ae5-8fa9-9fafd205e455
+  characteristic: 49535343-1e4d-4bd9-ba61-23c647249616
+  min_length: 20
+
+# Fixed frames, each ending in its own fixed checksum; frames over 20 bytes go as two writes.
+# Command AD (frames 8 and 12) is the bike's resistance command with the level byte FF: it sets nothing.
+# TO CHECK ON A BIKE: the bike answers each frame; the spec says the other app waited about 300 ms for
+# that answer and wrote a frame again when none came. OFP writes each once, in order.
+start:
+  service: 49535343-fe7d-4ae5-8fa9-9fafd205e455
+  characteristic: 49535343-8841-43f4-a8d4-ecbe34729bb3
+  with_response: true
+  frames:
+    - "f0 c8 01 b9"
+    - "f0 c9 b9"
+    - "f0 a3 93"
+    - "f0 a4 94"
+    - "f0 a5 95"
+    - "f0 ab 9b"
+    - "f0 c4 03 b7"
+    - "f0 ad ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff 01 ff"
+    - "ff ff 8b"
+    - "f0 cb 02 00 08 ff ff ff ff ff ff ff ff ff ff ff ff ff 01 00"
+    - "00 01 ff ff ff ff b6"
+    - "f0 ad ff ff 00 05 ff ff ff ff ff ff ff 00 00 ff ff ff 01 ff"
+    - "ff ff 94"
+
+# TO CHECK ON A BIKE: whether this fixed poll alone keeps data coming.
+poll:
+  service: 49535343-fe7d-4ae5-8fa9-9fafd205e455
+  characteristic: 49535343-8841-43f4-a8d4-ecbe34729bb3
+  with_response: true
+  frames: ["f0 ac 9c"]
+  every_ms: 300
+
+# The data packet starts F0 BC; it comes whole (26 bytes) or as 20 + 6, and every value read here is in
+# the first 20. Big-endian: 6-7 speed (0.1 km/h), 9 cadence (rpm), 10-11 energy (kcal; FF.. = not yet),
+# 14 resistance level (from 1), 18 heart rate (0 = none). Power is not sent.
+only_when: u8[0] == 0xf0 && u8[1] == 0xbc
+stale_after_ms: 5000
+
+fields:
+  speed: u16be[6] / 10
+  cadence: u8[9]
+  energy:
+    value: u16be[10]
+    only_when: u8[10] != 0xff
+  resistance:
+    value: u8[14]
+    only_when: u8[14] >= 1
+  heart_rate:
+    value: u8[18]
+    only_when: u8[18] > 0

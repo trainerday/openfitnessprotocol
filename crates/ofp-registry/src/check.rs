@@ -577,6 +577,28 @@ mod tests {
     }
 
     #[test]
+    fn the_start_command_bikes_decode_their_specs_examples() {
+        let reg = registry::load(&registry_dir()).unwrap();
+        // older Yesoul: resistance 10, 85 rpm, 180 W
+        let (source, v) = last_values(&reg, &connected_capture("YESOUL 12", "fff0", "fff4", &["0000 03e8 0a 00 55 00b4 000000"], &[]));
+        assert!(source.starts_with("yesoul-classic-bike:"), "{source}");
+        assert_eq!((v["resistance"], v["cadence"], v["power"]), (10.0, 85.0, 180.0));
+        // Domyos, the 20-byte first half: 25.0 km/h, 90 rpm, 45 kcal, resistance 8, 140 bpm
+        let svc = "49535343-fe7d-4ae5-8fa9-9fafd205e455";
+        let chr = "49535343-1e4d-4bd9-ba61-23c647249616";
+        let (source, v) = last_values(&reg, &connected_capture("Domyos-Bike-1234", svc, chr, &["f0bc 00000000 00fa 00 5a 002d 0064 08 000000 8c 00"], &[]));
+        assert!(source.starts_with("domyos-bike:"), "{source}");
+        assert_eq!((v["speed"], v["cadence"], v["energy"], v["resistance"], v["heart_rate"]), (25.0, 90.0, 45.0, 8.0, 140.0));
+        // the answers to the start frames are not data
+        assert_eq!(check_lines(&reg, None, "test", &connected_capture("Domyos-Bike-1234", svc, chr, &["f0c8 01 b9 0000000000000000000000000000"], &[])).decoded, 0);
+        // both declare their writes, none to a control point
+        for id in ["yesoul-classic-bike", "domyos-bike"] {
+            let t = reg.bundle.tables.iter().find(|t| t.id == id).unwrap();
+            assert!(t.start.is_some(), "{id}");
+        }
+    }
+
+    #[test]
     fn the_tymewear_draft_decodes_a_breath_and_skips_the_other_packets() {
         let reg = registry::load(&registry_dir()).unwrap();
         // a breath: inhale 1.50 s, exhale 2.50 s, raw tidal volume 180 → 15 breaths/min, 1.80 L, 27 L/min

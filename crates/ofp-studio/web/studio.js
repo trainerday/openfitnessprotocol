@@ -1166,7 +1166,7 @@ function viewConnect(current) {
       current ? h('button', { class: 'done', title: 'Back to ' + current.name, onclick: backToDevice }, '2 Check your numbers') : h('span', {}, '2 Check your numbers'),
       h('span', {}, '3 Send')),
     current ? h('p', { class: 'connected-note' }, 'Connected to ', h('b', {}, current.name), '. ', h('button', { class: 'linkish', onclick: backToDevice }, 'Back to its numbers'), ' · ', h('button', { class: 'linkish', onclick: disconnect }, 'Disconnect')) : null,
-    h('h1', {}, 'Connect your device'),
+    h('h1', {}, 'Connect your Bluetooth device'),
     h('p', { class: 'lead' }, 'Wake it up first: pedal, press a button, or put the strap on. It appears here within a few seconds.'),
     h('div', { id: 'cards-readable', class: 'cards' }),
     h('div', { id: 'cards-maybe-wrap', hidden: true }, h('h2', {}, 'Looks like a fitness device'), h('p', { class: 'muted' }, 'OFP can\'t read these yet. Connect yours anyway and send it to us: that is how it gets added.'), h('div', { id: 'cards-maybe', class: 'cards' })),

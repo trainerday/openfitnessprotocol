@@ -1,0 +1,41 @@
+id: yesoul-classic-bike
+name: Yesoul bike (older)
+reader: notify
+version: 1
+status: draft
+provenance: >
+  Written from yesoul-classic-bike.spec.md (facts learned from studying QZ, written down in a separate
+  session; this table was written without seeing QZ's code). Not yet checked on a bike. Newer Yesoul
+  bikes speak FTMS and are read by std-ftms-bike.
+verified_on:
+  - not verified on a bike yet
+
+match:
+  - name_prefix: YESOUL
+    service: fff0
+  - name_prefix: YS_G1M_
+    service: fff0
+
+notify:
+  service: fff0
+  characteristic: fff4
+  min_length: 12
+
+# One fixed frame starts the data; nothing after it.
+# TO CHECK ON A BIKE: the spec says the frame was written before subscribing; OFP writes it right after.
+start:
+  service: fff0
+  characteristic: fff1
+  frames: ["f5 20 20 40 f6"]
+  with_response: true
+
+# 12 bytes, big-endian: 4 resistance level, 6 cadence (rpm), 7-8 power (W). No speed, no energy.
+# (Bytes 2-3 are a distance counter whose unit is not known: not read.)
+stale_after_ms: 5000
+
+fields:
+  resistance: u8[4]
+  cadence: u8[6]
+  power:
+    value: u16be[7]
+    only_when: u8[6] > 0
