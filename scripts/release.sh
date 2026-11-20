@@ -84,7 +84,7 @@ windows() {
   set -- $OFP_WINDOWS_SIGN
   SIGN=${1:+-Endpoint $1 -Account $2 -Profile $3}
   # One connection: fetch the tag, build, and say where the installer is
-  ssh "$OFP_WINDOWS_SSH" "cd /d $DIR && git fetch -q --tags origin && git checkout -q v$V && powershell -NoProfile -ExecutionPolicy Bypass -File scripts\\app-build-windows.ps1 $SIGN"
+  ssh "$OFP_WINDOWS_SSH" "set PATH=%USERPROFILE%\\.cargo\\bin;%PATH% && cd /d $DIR && git fetch -q --tags origin && git checkout -q v$V && powershell -NoProfile -ExecutionPolicy Bypass -File scripts\\app-build-windows.ps1 $SIGN"
   mkdir -p $OUT
   scp "$OFP_WINDOWS_SSH:$(echo "$DIR" | tr '\\' '/')/target/release/bundle/nsis/OFP Studio_${V}_x64-setup.exe" "$OUT/OFP-Studio-$V-windows-setup.exe"
   echo "Windows: $OUT/OFP-Studio-$V-windows-setup.exe"

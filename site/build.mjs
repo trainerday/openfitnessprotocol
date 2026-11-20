@@ -71,48 +71,45 @@ ${body}
 }
 
 function home(latest) {
-  const download = latest
-    ? `<a class="button" href="/download">Download OFP Studio</a><span class="small">Version ${esc(latest.version)} · ${latest.files.windows ? 'Mac and Windows' : 'Mac'} · free</span>`
-    : `<a class="button quiet" href="${REPO}">See the project on GitHub</a>`;
+  const studio = latest
+    ? `<a class="button" href="/download">Download OFP Studio</a><span class="small">Free · ${latest.files.windows ? 'Mac and Windows' : 'Mac'}</span>`
+    : `<a class="button quiet" href="/download">OFP Studio: coming soon</a>`;
   return page({
-    path: '/', title: 'Open Fitness Protocol',
-    description: 'One open way for any fitness device to talk to any fitness app. A device is described by a small data file, and every app that uses OFP can read it.',
+    path: '/', title: 'Open Fitness Protocol: one library to read every fitness device',
+    description: 'Add one open library to your app and read every fitness device the community supports. A device that does not work yet: test it with OFP Studio, and an AI assistant can set it up.',
     body: `
 <div class="hero">
-  <span class="status">First version · everything can still change until 1.0</span>
-  <h1>One open way for any fitness device to talk to any fitness app.</h1>
-  <p class="lead">A device is described by a <b>table</b>: a small data file that says which bytes mean what. Every app that uses OFP can read every device that has one. No special code for each device in each app.</p>
-  <div class="actions">${download}</div>
+  <h1>One library to read every fitness device.</h1>
+  <p class="lead">Add OFP to your app once. You don't maintain code for each device: the community does, and new devices reach your app without a new release.</p>
+  <div class="actions"><a class="button quiet" href="${REPO}/blob/main/docs/integrating.md">Add OFP to your app</a></div>
 </div>
 
-<section>
-  <h2>Why</h2>
-  <p>Heart rate, power and smart trainers have Bluetooth standards. New sensors (breathing, core temperature, bikes that only broadcast their numbers) do not, so each maker invents a private format and each app has to write code for each device. Most of that code never gets written. OFP puts one open piece in the middle, and the rules for it live in a public git repository, not in a committee.</p>
-</section>
-
-<section>
-  <h2>Take part</h2>
-  <div class="cards">
-    <div class="card"><h3>Have a device nothing reads?</h3><p>Install OFP Studio, wake the device and click Use. You see what it sends, and its values once a table reads it. Say for each value whether it is right.</p><p><a href="/download">Download OFP Studio →</a></p></div>
-    <div class="card"><h3>Add a device</h3><p>Write its table from a recording, alone or with an AI assistant working beside you in the Studio. A pull request with the recording, and the automated check is the judge.</p><p><a href="${REPO}/blob/main/AGENTS.md">How a device is added →</a></p></div>
-    <div class="card"><h3>Building an app?</h3><p>Add the library and wire up four hooks. Every device in the registry then works in your app, and new ones arrive as data, without a new release.</p><p><a href="${REPO}/blob/main/docs/integrating.md">Add OFP to your app →</a></p></div>
-  </div>
+<section class="card spotlight">
+  <h2>Got a device that doesn't work?</h2>
+  <p>Install OFP Studio and test it: wake the device, click <b>Use</b>, and see what it sends. Then give the recording and this project to an AI assistant (Claude, ChatGPT, any that can read code), and it can set the device up for you. You check the numbers against the device's own display, and send it in.</p>
+  <div class="actions">${studio}</div>
 </section>
 
 <section>
   <h2>How a device gets in</h2>
   <div class="flow">
-    <div><b>Record</b><br>what the device sends, in the Studio.</div>
-    <div><b>Write the table</b><br>which bytes mean which field.</div>
-    <div><b>Confirm</b><br>the owner marks each value right or wrong.</div>
-    <div><b>Pull request</b><br>the check replays the recording through the table.</div>
-    <div><b>Works everywhere</b><br>in every app that uses OFP.</div>
+    <div><b>Test it</b><br>in OFP Studio, and save the recording.</div>
+    <div><b>An AI assistant sets it up</b><br>from the recording and this project.</div>
+    <div><b>You check it</b><br>each value right or wrong, on the device.</div>
+    <div><b>Send it in</b><br>an automated check replays your recording.</div>
+    <div><b>It works everywhere</b><br>in every app that uses OFP.</div>
   </div>
 </section>
 
 <section>
+  <h2>Why</h2>
+  <p>Heart rate, power and smart trainers have Bluetooth standards. Newer sensors (breathing, core temperature, bikes that only broadcast their numbers) don't, so each maker invents a private format and each app has to write code for each device. Most of that code never gets written. OFP puts one open piece in the middle, and its rules live in a public repository, not in a committee.</p>
+</section>
+
+<section>
   <h2>Devices so far</h2>
-  <p>The <b>Keiser M3i</b> bike, checked on a real ride. First drafts for the <b>CORE</b> body temperature sensor and the <b>Tymewear VitalPro</b> breathing sensor, waiting for owners to try them.</p>
+  <p>The <b>Keiser M3i</b> bike, checked on a real ride. First versions for the <b>CORE</b> body temperature sensor and the <b>Tymewear VitalPro</b> breathing sensor, waiting for owners to test them.</p>
+  <p class="small">OFP is new: this is its first version, and things can still change before 1.0.</p>
 </section>
 `,
   });
