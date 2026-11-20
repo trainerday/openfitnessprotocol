@@ -253,6 +253,10 @@ table by following the README, and the license, governance and contributing docu
   merged if nobody objects.
 - Created and maintained by TrainerDay, open to everyone. Maintainers are added from people whose
   tables, fields and readers have been merged.
+- **Handover is the intent.** TrainerDay does not want to own OFP forever. Once it has contributors
+  and other apps using it, stewardship, including the name, is meant to pass to the community or to
+  a neutral body. The license and the sign-off rule already make sure nobody, TrainerDay included,
+  can take it closed.
 - Anything calling itself OFP-compatible passes the conformance tests in this repo.
 - **AI-assisted contributions are welcome.** Say so in the pull request; a human is responsible for
   it; the capture replay judges it like any other.

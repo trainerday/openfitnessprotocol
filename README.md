@@ -210,6 +210,9 @@ small open protocol can win over apps and hardware makers. The design document l
 OFP was started and is maintained by [TrainerDay](https://trainerday.com), a training app for
 indoor cycling. It is meant for every app and every device maker, and it is open to everyone.
 
-- **License: Apache-2.0** for code, tables and documents, so any app can use it, open or closed.
-  (The license file will be added before the first public release.)
+**TrainerDay does not intend to own this forever.** Once OFP has contributors and other apps using
+it, we intend to hand its stewardship, including the name, to the community or to a neutral body.
+
+- **License: [Apache-2.0](LICENSE)** for code, tables and documents, so any app can use it, open
+  or closed.
 - **No fees, ever.** No paid tiers and no certification fees. Nobody makes money from the protocol.
