@@ -1127,6 +1127,15 @@ function chooseAnother() {
   render();
 }
 
+/** Stop reading the device and let it go; what was recorded so far stays saved on this computer. */
+const disconnect = guard(async () => {
+  await api('/api/session', {});
+  S.sent = null;
+  simpleView = 'connect';
+  await reload();
+  toast('Disconnected.');
+});
+
 /** Back to the device being read. */
 function backToDevice() {
   simpleView = 'check';
@@ -1146,7 +1155,7 @@ function viewConnect(current) {
     h('div', { class: 'steps' }, h('span', { class: 'on' }, '1 Connect'),
       current ? h('button', { class: 'done', title: 'Back to ' + current.name, onclick: backToDevice }, '2 Check your numbers') : h('span', {}, '2 Check your numbers'),
       h('span', {}, '3 Send')),
-    current ? h('p', { class: 'connected-note' }, 'Connected to ', h('b', {}, current.name), '. ', h('button', { class: 'linkish', onclick: backToDevice }, 'Back to its numbers')) : null,
+    current ? h('p', { class: 'connected-note' }, 'Connected to ', h('b', {}, current.name), '. ', h('button', { class: 'linkish', onclick: backToDevice }, 'Back to its numbers'), ' · ', h('button', { class: 'linkish', onclick: disconnect }, 'Disconnect')) : null,
     h('h1', {}, 'Connect your device'),
     h('p', { class: 'lead' }, 'Wake it up first: pedal, press a button, or put the strap on. It appears here within a few seconds.'),
     h('div', { id: 'cards-readable', class: 'cards' }),
@@ -1299,7 +1308,8 @@ function viewCheck(s) {
   return h('div', { class: 'simple-page' },
     h('div', { class: 'steps' }, h('button', { class: 'done', title: 'Choose a different device', onclick: chooseAnother }, '1 Connect'), h('span', { class: 'on' }, '2 Check your numbers'), h('span', {}, '3 Send')),
     h('div', { class: 'row', style: 'justify-content:space-between; align-items:baseline' },
-      h('h1', {}, s.name), h('button', { class: 'linkish', onclick: chooseAnother }, 'Choose another device')),
+      h('h1', {}, s.name),
+      h('div', { class: 'row' }, h('button', { class: 'linkish', onclick: chooseAnother }, 'Choose another device'), h('button', { class: 'small disconnect', onclick: disconnect }, 'Disconnect'))),
     h('p', { class: 'lead' }, 'Use your device normally and compare with its own display. For each number: does it look right? They move, so close is right.'),
     h('div', { id: 'live-status', class: 'live-status' }), h('div', { id: 'tiles' }),
     holdSteady(s, !readable),

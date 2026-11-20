@@ -175,3 +175,5 @@ button.linkish.wrong { white-space: nowrap; }
 .said-row input { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; }
 .device-card.current { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
 .connected-note { margin: -4px 0 12px; font-size: 14px; }
+button.disconnect { color: var(--bad); border-color: #f0c4c0; }
+button.disconnect:hover { border-color: var(--bad); }
