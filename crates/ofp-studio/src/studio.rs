@@ -320,7 +320,14 @@ impl Studio {
             files.sort_by_key(|f| std::cmp::Reverse(std::fs::metadata(f).and_then(|m| m.modified()).ok()));
             for f in files {
                 let size = std::fs::metadata(&f).map(|m| m.len()).unwrap_or(0);
-                out.push(json!({ "path": f.display().to_string(), "name": f.file_name().and_then(|n| n.to_str()), "place": place, "kb": size.div_ceil(1024) }));
+                // the device's own name, from the recording's first line (the header)
+                let device = std::fs::File::open(&f).ok().and_then(|file| {
+                    let mut first = String::new();
+                    std::io::BufRead::read_line(&mut std::io::BufReader::new(file), &mut first).ok()?;
+                    let head: Value = serde_json::from_str(&first).ok()?;
+                    head["device"]["name"].as_str().map(str::to_string)
+                });
+                out.push(json!({ "path": f.display().to_string(), "name": f.file_name().and_then(|n| n.to_str()), "place": place, "kb": size.div_ceil(1024), "device": device }));
             }
         }
         json!(out)

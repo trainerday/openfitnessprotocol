@@ -186,3 +186,12 @@ button.connect.busy::before { content: ''; display: inline-block; width: 12px; h
 .panel.tell { margin-top: 16px; border-color: #b8e2cf; background: #f2fbf6; }
 .panel.tell h2 { color: var(--good); margin-top: 2px; }
 .tell-text { white-space: pre-wrap; font: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 8px 0; }
+#my-recordings { font-size: 14px; }
+#my-recordings.on { font-weight: 700; text-decoration: underline; }
+body:not(.simple) #my-recordings { display: none; }
+.steps button.next { border-color: var(--line); color: var(--muted); }
+.rec-list { display: grid; gap: 8px; }
+.rec-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; }
+.rec-what { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rec-what b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rec-sent { color: var(--good); font-size: 14px; white-space: nowrap; }

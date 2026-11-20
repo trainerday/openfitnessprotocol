@@ -198,6 +198,8 @@ function render() {
   renderBanner();
   const main = $('#main');
   document.body.classList.toggle('simple', !S.advanced);
+  const mr = $('#my-recordings');
+  if (mr) mr.classList.toggle('on', !S.advanced && simpleView === 'recordings');
   $('#advanced').checked = S.advanced;
   const view = !S.advanced ? viewSimple() : { devices: viewDevices, record: viewRecord, map: viewMap, live: viewLive, save: viewSave, tester: viewTester, recordings: viewRecordings }[S.tab]();
   main.replaceChildren(view);
@@ -1146,6 +1148,71 @@ const disconnect = guard(async () => {
   toast('Disconnected.');
 });
 
+/** My recordings: every session, newest first, sent or not. */
+function showRecordings() {
+  simpleView = 'recordings';
+  S.sent = null;
+  api('/api/captures').then((c) => { S.captures = c; if (simpleView === 'recordings') render(); }).catch(() => {});
+  render();
+}
+
+/** What was sent from this computer: recording file name → its code (kept in this browser's storage). */
+function sentCodes() {
+  try { return JSON.parse(localStorage.getItem('ofp-sent') || '{}'); } catch { return {}; }
+}
+function rememberSent(file, code) {
+  try { localStorage.setItem('ofp-sent', JSON.stringify({ ...sentCodes(), [file]: code })); } catch { /* private window */ }
+}
+
+/** "csc-emulator-20261120-191107.capture.jsonl" → { device: "Csc emulator", when: "20 Nov 2026, 19:11" } */
+function describeRecording(name) {
+  const m = /^(.*)-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})\d{2}(?:-.*)?\.capture\.jsonl$/.exec(name);
+  if (!m) return { device: name.replace(/\.capture\.jsonl$/, ''), when: '' };
+  const device = m[1].replace(/-received$/, '').replace(/-/g, ' ');
+  const when = new Date(+m[2], +m[3] - 1, +m[4], +m[5], +m[6]).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return { device: device.charAt(0).toUpperCase() + device.slice(1), when };
+}
+
+/** Send a recording from the list (one that was not sent when it was made). */
+const sendRecording = guard(async (c, button) => {
+  if (session() && session().recording) throw new Error('Disconnect your device first: a recording is still running.');
+  button.disabled = true;
+  button.textContent = 'Sending…';
+  try {
+    await api('/api/session', { capture: c.path });
+    const recording = await (await fetch('/api/capture/file', { cache: 'no-store' })).text();
+    const d = describeRecording(c.name);
+    if (c.device) d.device = c.device;
+    const r = await fetch(SUBMIT, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ recording, comment: '', email: '', version: S.state && S.state.version, device: d.device, read_as: 'sent later from My recordings' }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.code) throw new Error(j.error || 'Sending did not work. Check the internet connection and try again.');
+    rememberSent(c.name, j.code);
+    await api('/api/session', {}).catch(() => {});
+    toast('Sent. Its code is ' + j.code);
+  } finally {
+    await reload();
+  }
+});
+
+function viewMyRecordings() {
+  const sent = sentCodes();
+  const mine = (S.captures || []).filter((c) => c.place === 'captures');
+  const rows = mine.map((c) => {
+    const d = describeRecording(c.name);
+    if (c.device) d.device = c.device;
+    const code = sent[c.name];
+    const button = h('button', { class: 'small', onclick: (e) => sendRecording(c, e.currentTarget) }, 'Send');
+    return h('div', { class: 'rec-row' },
+      h('div', { class: 'rec-what' }, h('b', {}, d.device), h('span', { class: 'muted' }, d.when + (c.kb ? ` · ${c.kb} KB` : ''))),
+      code ? h('span', { class: 'rec-sent' }, '✓ Sent · ', h('span', { class: 'mono' }, code)) : button);
+  });
+  return h('div', { class: 'simple-page' },
+    h('div', { class: 'row', style: 'justify-content:space-between; align-items:baseline' },
+      h('h1', {}, 'My recordings'), h('button', { class: 'linkish', onclick: () => { simpleView = session() ? 'check' : 'connect'; render(); } }, session() ? 'Back to my device' : 'Connect a device')),
+    h('p', { class: 'lead' }, 'Every time you connect a device, what it sends is saved on this computer. Send any of them to us, if you did not already.'),
+    rows.length ? h('div', { class: 'rec-list' }, rows) : h('p', { class: 'empty-note' }, 'Nothing yet. Connect a device and it appears here.'));
+}
+
 /** Back to the device being read. */
 function backToDevice() {
   simpleView = 'check';
@@ -1154,6 +1221,7 @@ function backToDevice() {
 
 function viewSimple() {
   const s = session();
+  if (simpleView === 'recordings') return viewMyRecordings();
   if (S.sent) return viewSent();
   if (!s || s.from_file || simpleView === 'connect') return viewConnect(s && !s.from_file ? s : null);
   return viewCheck(s);
@@ -1316,6 +1384,8 @@ function viewCheck(s) {
       const confirms = (S.capture && S.capture.confirms) || [];
       const works = confirms.some((c) => c.ok) && !confirms.some((c) => !c.ok);
       S.sent = { code: j.code, name: [make.value.trim(), model.value.trim()].filter(Boolean).join(' ') || s.name, works };
+      const sentFile = session() && session().file;
+      if (sentFile) rememberSent(sentFile.split('/').pop(), j.code);
       await reload();
     } catch (e) {
       button.disabled = false;
@@ -1324,7 +1394,8 @@ function viewCheck(s) {
     }
   });
   return h('div', { class: 'simple-page' },
-    h('div', { class: 'steps' }, h('button', { class: 'done', title: 'Choose a different device', onclick: chooseAnother }, '1 Connect'), h('span', { class: 'on' }, '2 Check your numbers'), h('span', {}, '3 Send')),
+    h('div', { class: 'steps' }, h('button', { class: 'done', title: 'Choose a different device', onclick: chooseAnother }, '1 Connect'), h('span', { class: 'on' }, '2 Check your numbers'),
+      h('button', { class: 'next', onclick: () => { const box = $('.panel.send'); if (box) box.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }, '3 Send')),
     h('div', { class: 'row', style: 'justify-content:space-between; align-items:baseline' },
       h('h1', {}, s.name),
       h('div', { class: 'row' }, h('button', { class: 'linkish', onclick: chooseAnother }, 'Choose another device'), h('button', { class: 'small disconnect', onclick: disconnect }, 'Disconnect'))),
@@ -1361,7 +1432,7 @@ function viewSent() {
     h('div', { class: 'code' }, S.sent.code),
     h('p', {}, 'Keep the code: it is how we find your recording. If you want to follow along, ', h('a', { href: issue, target: '_blank', rel: 'noopener' }, 'open an issue on GitHub'), ' with the code in it. Someone (or an AI assistant) can now work out your device from what it sent, and you get it in a later version of OFP Studio.'),
     S.sent.works ? tellYourApps(S.sent.name) : null,
-    h('div', { class: 'row' }, h('button', { class: 'connect', onclick: chooseAnother }, 'Connect another device')));
+    h('div', { class: 'row' }, h('button', { class: 'connect', onclick: chooseAnother }, 'Connect another device'), h('button', { class: 'linkish', onclick: showRecordings }, 'See my recordings')));
 }
 
 // ───────────────────────── version, and a newer release ─────────────────────────
@@ -1406,5 +1477,6 @@ async function checkForUpdate() {
 setInterval(() => { if (showingLive()) renderTiles(); }, 1000);
 document.querySelectorAll('#tabs button').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab)));
 $('#assistant-open').addEventListener('click', assistantDialog);
+$('#my-recordings').addEventListener('click', () => { if (S.advanced) { S.advanced = false; localStorage.setItem('ofp-advanced', '0'); } showRecordings(); });
 $('#advanced').addEventListener('change', (e) => { S.advanced = e.target.checked; localStorage.setItem('ofp-advanced', S.advanced ? '1' : '0'); render(); });
 reload().then(() => { checkForUpdate(); if (session()) setTab(session().from_file ? 'map' : 'record'); connectEvents(); }).catch((e) => toast(e.message, true));
