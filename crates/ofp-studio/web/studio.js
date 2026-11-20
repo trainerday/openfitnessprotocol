@@ -1312,7 +1312,10 @@ function viewCheck(s) {
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok || !j.code) throw new Error(j.error || 'Sending did not work. Check the internet connection and try again.');
-      S.sent = { code: j.code, name: s.name };
+      // did the person say their numbers are right (and none wrong)? Then the device works with OFP
+      const confirms = (S.capture && S.capture.confirms) || [];
+      const works = confirms.some((c) => c.ok) && !confirms.some((c) => !c.ok);
+      S.sent = { code: j.code, name: [make.value.trim(), model.value.trim()].filter(Boolean).join(' ') || s.name, works };
       await reload();
     } catch (e) {
       button.disabled = false;
@@ -1339,6 +1342,16 @@ function viewCheck(s) {
       h('button', { id: 'send-button', class: 'connect', onclick: send }, 'Send to OFP')));
 }
 
+/** The device works: the apps the person uses can read it too, once they use OFP. A sentence to send them. */
+function tellYourApps(device) {
+  const text = `My ${device} works with Open Fitness Protocol: I checked its numbers in OFP Studio. Could your app read it through OFP? https://openfitnessprotocol.org`;
+  return h('div', { class: 'panel tell' },
+    h('h2', {}, '✓ Your device works with OFP'),
+    h('p', {}, 'Every app that uses Open Fitness Protocol can read it. If an app you use doesn\'t read your device yet, tell them. You can send this:'),
+    h('pre', { class: 'tell-text' }, text),
+    h('button', { class: 'small', onclick: async () => { try { await navigator.clipboard.writeText(text); toast('Copied'); } catch { toast('Select the text and copy it', true); } } }, 'Copy'));
+}
+
 function viewSent() {
   const issue = `https://github.com/trainerday/openfitnessprotocol/issues/new?template=device-request.yml&title=${encodeURIComponent('Recording ' + S.sent.code + ': ' + S.sent.name)}`;
   return h('div', { class: 'simple-page' },
@@ -1347,6 +1360,7 @@ function viewSent() {
     h('p', { class: 'lead' }, 'Your recording is with us. Its code is'),
     h('div', { class: 'code' }, S.sent.code),
     h('p', {}, 'Keep the code: it is how we find your recording. If you want to follow along, ', h('a', { href: issue, target: '_blank', rel: 'noopener' }, 'open an issue on GitHub'), ' with the code in it. Someone (or an AI assistant) can now work out your device from what it sent, and you get it in a later version of OFP Studio.'),
+    S.sent.works ? tellYourApps(S.sent.name) : null,
     h('div', { class: 'row' }, h('button', { class: 'connect', onclick: chooseAnother }, 'Connect another device')));
 }
 

@@ -183,3 +183,6 @@ button.disconnect:hover { border-color: var(--bad); }
 .live-status.waiting { background: var(--accent-soft); border-radius: 12px; padding: 14px 16px; }
 .empty-note.searching::before { content: ''; display: inline-block; width: 16px; height: 16px; margin-right: 10px; border-radius: 50%; border: 3px solid var(--accent-soft); border-top-color: var(--accent); animation: ofp-spin .8s linear infinite; vertical-align: -3px; }
 button.connect.busy::before { content: ''; display: inline-block; width: 12px; height: 12px; margin-right: 8px; border-radius: 50%; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; animation: ofp-spin .8s linear infinite; vertical-align: -2px; }
+.panel.tell { margin-top: 16px; border-color: #b8e2cf; background: #f2fbf6; }
+.panel.tell h2 { color: var(--good); margin-top: 2px; }
+.tell-text { white-space: pre-wrap; font: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 8px 0; }
