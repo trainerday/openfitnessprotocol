@@ -1,0 +1,13 @@
+id: 17
+key: stroke_rate
+name: Stroke rate
+unit: spm
+type: decimal
+decimals: 1
+min: 0
+max: 80
+kind: instantaneous
+tier: experimental
+tolerance: { abs: 1, pct: 5 }
+description: >
+  Rowing strokes per minute right now.

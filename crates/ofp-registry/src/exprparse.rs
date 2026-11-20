@@ -9,6 +9,9 @@
 //! ```
 //!
 //! Bit operators bind tighter than comparisons, so `u8[2] & 0x80 == 0` means `(u8[2] & 0x80) == 0`.
+//!
+//! In a table with a `layout`, a part's name reads that part (`power`, `crank_revs`). In a field with a
+//! `rate`, `rate` is the counter's change per second; `wheel` is the wheel's circumference in metres.
 
 use ofp_core::{BinOp, Expr};
 
@@ -68,16 +71,18 @@ fn lex(src: &str) -> Result<Vec<Tok>, String> {
     Ok(out)
 }
 
-struct Parser {
+struct Parser<'n> {
     toks: Vec<Tok>,
     pos: usize,
+    /// The names of the table's layout parts, in order.
+    parts: &'n [String],
 }
 
 fn bin(op: BinOp, a: Expr, b: Expr) -> Expr {
     Expr::Bin(op, Box::new(a), Box::new(b))
 }
 
-impl Parser {
+impl Parser<'_> {
     fn peek_sym(&self) -> Option<&'static str> {
         match self.toks.get(self.pos) {
             Some(Tok::Sym(s)) => Some(s),
@@ -103,7 +108,7 @@ impl Parser {
     }
 
     /// One left-associative level: `next (op next)*`.
-    fn level(&mut self, ops: &[(&str, BinOp)], next: fn(&mut Parser) -> Result<Expr, String>) -> Result<Expr, String> {
+    fn level(&mut self, ops: &[(&str, BinOp)], next: fn(&mut Self) -> Result<Expr, String>) -> Result<Expr, String> {
         let mut left = next(self)?;
         'again: loop {
             for (s, op) in ops {
@@ -128,22 +133,22 @@ impl Parser {
     }
 
     fn or(&mut self) -> Result<Expr, String> {
-        self.level(&[("||", BinOp::Either)], Parser::and)
+        self.level(&[("||", BinOp::Either)], Self::and)
     }
     fn and(&mut self) -> Result<Expr, String> {
-        self.level(&[("&&", BinOp::Both)], Parser::compare)
+        self.level(&[("&&", BinOp::Both)], Self::compare)
     }
     fn compare(&mut self) -> Result<Expr, String> {
-        self.level(&[("==", BinOp::Eq), ("!=", BinOp::Ne), ("<=", BinOp::Le), (">=", BinOp::Ge), ("<", BinOp::Lt), (">", BinOp::Gt)], Parser::bit_or)
+        self.level(&[("==", BinOp::Eq), ("!=", BinOp::Ne), ("<=", BinOp::Le), (">=", BinOp::Ge), ("<", BinOp::Lt), (">", BinOp::Gt)], Self::bit_or)
     }
     fn bit_or(&mut self) -> Result<Expr, String> {
-        self.level(&[("|", BinOp::Or)], Parser::bit_xor)
+        self.level(&[("|", BinOp::Or)], Self::bit_xor)
     }
     fn bit_xor(&mut self) -> Result<Expr, String> {
-        self.level(&[("^", BinOp::Xor)], Parser::bit_and)
+        self.level(&[("^", BinOp::Xor)], Self::bit_and)
     }
     fn bit_and(&mut self) -> Result<Expr, String> {
-        self.level(&[("&", BinOp::And)], Parser::shift)
+        self.level(&[("&", BinOp::And)], Self::shift)
     }
     fn shift(&mut self) -> Result<Expr, String> {
         self.level(&[("<<", BinOp::Shl), (">>", BinOp::Shr)], Parser::additive)
@@ -152,7 +157,7 @@ impl Parser {
         self.level(&[("+", BinOp::Add), ("-", BinOp::Sub)], Parser::multiplicative)
     }
     fn multiplicative(&mut self) -> Result<Expr, String> {
-        self.level(&[("*", BinOp::Mul), ("/", BinOp::Div)], Parser::unary)
+        self.level(&[("*", BinOp::Mul), ("/", BinOp::Div)], Self::unary)
     }
 
     fn unary(&mut self) -> Result<Expr, String> {
@@ -179,6 +184,17 @@ impl Parser {
             }
             Some(Tok::Ident(name)) => {
                 self.pos += 1;
+                if self.peek_sym() != Some("[") {
+                    if let Some(i) = self.parts.iter().position(|p| *p == name) {
+                        return Ok(Expr::Part(i));
+                    }
+                    return match name.as_str() {
+                        "rate" => Ok(Expr::Rate),
+                        "wheel" => Ok(Expr::Wheel),
+                        _ if self.parts.is_empty() => Err(format!("'{name}' is not known (a byte read is written like u8[3])")),
+                        _ => Err(format!("'{name}' is not a part of the layout ({})", self.parts.join(", "))),
+                    };
+                }
                 self.expect("[")?;
                 let at = match self.toks.get(self.pos) {
                     Some(Tok::Num(n)) if n.fract() == 0.0 && *n >= 0.0 && *n < 4096.0 => *n as usize,
@@ -205,7 +221,12 @@ impl Parser {
 }
 
 pub fn parse(src: &str) -> Result<Expr, String> {
-    let mut p = Parser { toks: lex(src).map_err(|e| format!("'{src}': {e}"))?, pos: 0 };
+    parse_with(src, &[])
+}
+
+/// The same, in a table whose layout has these parts.
+pub fn parse_with(src: &str, parts: &[String]) -> Result<Expr, String> {
+    let mut p = Parser { toks: lex(src).map_err(|e| format!("'{src}': {e}"))?, pos: 0, parts };
     let e = p.ternary().map_err(|e| format!("'{src}': {e}"))?;
     if p.pos != p.toks.len() {
         return Err(format!("'{src}': unexpected text after the expression"));

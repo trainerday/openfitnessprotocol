@@ -32,7 +32,8 @@ This is what the design promises, and what a report should be measured against.
 **A table** is data. It can say which packets it matches and how bytes become fields: positions, masks,
 conditions, arithmetic. It cannot contain code. It cannot name a file, an address, a program or another
 device. It cannot send anything to a device. Its arithmetic is capped in depth and size, so it cannot
-make an app hang. The core that reads tables has no access to the system it runs on: it is built
+make an app hang. The only state it keeps is the last count and time of a running counter (`rate`),
+per source. The core that reads tables has no access to the system it runs on: it is built
 without the standard library and with unsafe code forbidden.
 
 **A plugin** (code for a device no table can read; designed, not built yet, and never part of this

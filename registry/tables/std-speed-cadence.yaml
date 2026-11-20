@@ -1,0 +1,40 @@
+id: std-speed-cadence
+name: Speed and Cadence
+reader: notify
+version: 1
+status: draft
+provenance: >
+  The Bluetooth Cycling Speed and Cadence Service and its CSC Measurement characteristic (0x2A5B),
+  as the Bluetooth SIG publishes them in the GATT Specification Supplement. A standard table:
+  maintained by the maintainers.
+verified_on:
+  - not verified on a device yet
+
+match:
+  - service: "1816"
+
+notify:
+  service: "1816"
+  characteristic: "2a5b"
+  min_length: 1
+
+# 0     flags: bit 0 wheel data present, bit 1 crank data present
+# wheel: revolutions (4), last wheel event time (2, 1/1024 s); crank: revolutions (2), last crank
+# event time (2, 1/1024 s). Speed needs the wheel's circumference, which the app sets.
+stale_after_ms: 5000
+
+layout:
+  start: 1
+  parts:
+    - { name: wheel_revs, type: u32le, when: "u8[0] & 1" }
+    - { name: wheel_time, type: u16le, when: "u8[0] & 1" }
+    - { name: crank_revs, type: u16le, when: "u8[0] & 2" }
+    - { name: crank_time, type: u16le, when: "u8[0] & 2" }
+
+fields:
+  speed:
+    rate: { count: wheel_revs, time: wheel_time, count_wrap: 4294967296, time_wrap: 65536, time_unit: 1/1024 }
+    value: rate * wheel * 3.6
+  cadence:
+    rate: { count: crank_revs, time: crank_time, count_wrap: 65536, time_wrap: 65536, time_unit: 1/1024 }
+    value: rate * 60

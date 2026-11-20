@@ -1,10 +1,12 @@
 //! The broadcast reader and the table engine.
 
-use crate::bundle::{Bundle, FieldDef, FieldType, MatchRule, SampleKind, Table, Tier};
+use crate::bundle::{Bundle, FieldDef, FieldType, MatchRule, RateSpec, SampleKind, Table, Tier, MAX_LAYOUT_PARTS};
+use crate::expr::{Cx, Expr, PartType};
 use crate::BUNDLE_VERSION;
 use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::string::{String, ToString};
+use alloc::vec;
 use alloc::vec::Vec;
 use serde::Serialize;
 use serde_json::Value;
@@ -128,6 +130,8 @@ struct Source {
     rssi: Option<i16>,
     /// A source read over a connection.
     gatt: Option<Gatt>,
+    /// One per field of the table: the running counters behind rate fields.
+    rates: Vec<RateState>,
 }
 
 struct Gatt {
@@ -141,7 +145,7 @@ struct Gatt {
 const CONNECT_RETRY_MS: u64 = 5000;
 
 /// What the host sets once, at the start.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Settings {
     /// Wait at least this long before a source counts as silent, whatever its table says: for a
     /// radio that misses many advertisements.
@@ -153,8 +157,37 @@ pub struct Settings {
     pub lost_after_ms: u64,
     /// Sources the rider used before: they are used again as soon as they are heard.
     pub remembered: Vec<String>,
-    /// Bluetooth services the app reads by itself. `None` = the app did not say.
+    /// Bluetooth services the app reads by itself. `None` = the app did not say. A connected-device
+    /// table for one of these services is never offered: the app reads that service its own way.
     pub handled_services: Option<Vec<String>>,
+    /// The rider's wheel, for speed from a wheel counter (Speed and Cadence sensors).
+    pub wheel_circumference_mm: u32,
+}
+
+impl Default for Settings {
+    fn default() -> Settings {
+        Settings {
+            min_stale_ms: 0,
+            repeat_ms: 0,
+            lost_after_ms: 0,
+            remembered: Vec::new(),
+            handled_services: None,
+            // a 700x25c road tyre, the usual default in cycling apps
+            wheel_circumference_mm: 2105,
+        }
+    }
+}
+
+/// The last event of a running counter (see `RateSpec`), per field of a source.
+#[derive(Clone, Copy, Debug, Default)]
+struct RateState {
+    count: f64,
+    time: f64,
+    /// Counts per second between the last two events.
+    rate: Option<f64>,
+    /// When the counter last moved.
+    moved_ms: u64,
+    seen: bool,
 }
 
 pub struct Core {
@@ -215,6 +248,7 @@ impl Core {
                     return Err(format!("table {}: unknown field '{}'", t.id, f.field));
                 }
             }
+            check_layout_and_rates(t)?;
         }
         Ok(Core { bundle, sources: BTreeMap::new(), settings: Settings::default() })
     }
@@ -328,7 +362,7 @@ impl Core {
                     continue;
                 }
             }
-            let (fields, out_of_range) = decode(&self.bundle, table, data);
+            let (fields, out_of_range) = decode(&self.bundle, table, data, &mut s.rates, now_ms, &self.settings);
             s.last_ms = now_ms;
             s.stale = false;
             for (k, v) in &fields {
@@ -371,6 +405,13 @@ impl Core {
             if table.reader != "notify" || !table.matches.iter().any(|m| match_connectable(m, adv)) {
                 continue;
             }
+            // the app reads this service its own way
+            if let (Some(handled), Some(n)) = (&self.settings.handled_services, &table.notify) {
+                let service = normalize_uuid(&n.service);
+                if handled.iter().any(|h| normalize_uuid(h) == service) {
+                    continue;
+                }
+            }
             let source_id = format!("{}:{}", table.id, adv.device_id);
             if !self.sources.contains_key(&source_id) {
                 if self.sources.len() >= MAX_SOURCES {
@@ -398,6 +439,7 @@ impl Core {
                         emitted_ms: adv.now_ms,
                         rssi: adv.rssi,
                         gatt: Some(Gatt { device_id: adv.device_id.to_string(), connected: false, asked_ms: None }),
+                        rates: vec![RateState::default(); table.fields.len()],
                     },
                 );
             }
@@ -457,7 +499,18 @@ impl Core {
                     out.push(description.clone());
                     self.sources.insert(
                         source_id.clone(),
-                        Source { table: ti, last_ms: adv.now_ms, stale: false, in_use: false, description, values: BTreeMap::new(), emitted_ms: adv.now_ms, rssi: adv.rssi, gatt: None },
+                        Source {
+                            table: ti,
+                            last_ms: adv.now_ms,
+                            stale: false,
+                            in_use: false,
+                            description,
+                            values: BTreeMap::new(),
+                            emitted_ms: adv.now_ms,
+                            rssi: adv.rssi,
+                            gatt: None,
+                            rates: vec![RateState::default(); table.fields.len()],
+                        },
                     );
                 }
             }
@@ -470,8 +523,9 @@ impl Core {
                 }
             }
 
-            let (fields, out_of_range) = decode(&self.bundle, table, payload);
-            if let Some(s) = self.sources.get_mut(&source_id) {
+            let Some(s) = self.sources.get_mut(&source_id) else { return };
+            let (fields, out_of_range) = decode(&self.bundle, table, payload, &mut s.rates, adv.now_ms, &self.settings);
+            {
                 for (k, v) in &fields {
                     s.values.insert(k.clone(), v.clone());
                 }
@@ -535,16 +589,115 @@ fn display_uuid(uuid: &str) -> String {
 }
 
 /// A table's fields from one payload: the values in range, and the keys of those that were not.
-fn decode(bundle: &Bundle, table: &Table, payload: &[u8]) -> (BTreeMap<String, Value>, Vec<String>) {
+/// A layout and rates can only read what exists, within the same limits as any expression.
+fn check_layout_and_rates(t: &Table) -> Result<(), String> {
+    let parts = t.layout.as_ref().map_or(0, |l| l.parts.len());
+    if parts > MAX_LAYOUT_PARTS {
+        return Err(format!("table {}: a layout has at most {MAX_LAYOUT_PARTS} parts", t.id));
+    }
+    let reads_ok = |e: &Expr, rate_allowed: bool| {
+        let (part, rate) = e.uses();
+        e.within_limits() && part.is_none_or(|p| p < parts) && (rate_allowed || !rate)
+    };
+    if let Some(l) = &t.layout {
+        for p in &l.parts {
+            // where a part sits cannot depend on other parts: flags are read at fixed positions
+            if p.present_when.as_ref().is_some_and(|c| !c.within_limits() || c.uses() != (None, false)) {
+                return Err(format!("table {}: layout part {}: present_when reads fixed positions only", t.id, p.name));
+            }
+        }
+    }
+    let plain = t.only_when.iter().chain(t.instance.iter().map(|i| &i.value)).chain(t.matches.iter().filter_map(|m| m.when.as_ref()));
+    for e in plain {
+        if e.uses() != (None, false) {
+            return Err(format!("table {}: match rules, only_when and instance read fixed positions only", t.id));
+        }
+    }
+    for f in &t.fields {
+        let has_rate = f.rate.is_some();
+        if !reads_ok(&f.value, has_rate) || !f.only_when.as_ref().is_none_or(|w| reads_ok(w, has_rate)) {
+            return Err(format!("table {}: field {} reads a part that does not exist, or a rate it does not have", t.id, f.field));
+        }
+        if let Some(r) = &f.rate {
+            if !reads_ok(&r.count, false) || !reads_ok(&r.time, false) || !(r.count_wrap > 0.0 && r.time_wrap > 0.0 && r.time_unit > 0.0) || r.stop_ms > 60_000 {
+                return Err(format!("table {}: field {}: the rate's counter, time, wraps (above 0) or stop time (at most 60 s) are not right", t.id, f.field));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Where each part of a table's layout sits in this packet (`None`: not in it).
+fn place_parts(table: &Table, payload: &[u8]) -> Vec<(PartType, Option<usize>)> {
+    let Some(layout) = &table.layout else { return Vec::new() };
+    let mut at = layout.start;
+    layout
+        .parts
+        .iter()
+        .map(|part| {
+            let present = part.present_when.as_ref().is_none_or(|c| c.eval(payload).unwrap_or(0.0) != 0.0);
+            if present {
+                let here = at;
+                at += part.ty.width();
+                (part.ty, Some(here))
+            } else {
+                (part.ty, None)
+            }
+        })
+        .collect()
+}
+
+/// How far a counter that starts again from 0 at `wrap` moved forward (no `rem_euclid` without std).
+fn forward(d: f64, wrap: f64) -> f64 {
+    let r = d % wrap;
+    if r < 0.0 {
+        r + wrap
+    } else {
+        r
+    }
+}
+
+/// The newest rate of a running counter, after this packet. `None` until two events were seen.
+fn advance_rate(spec: &RateSpec, st: &mut RateState, payload: &[u8], cx: &Cx, now_ms: u64) -> Option<f64> {
+    // this packet has no counter (its flag is off): no value from it
+    let (Some(count), Some(time)) = (spec.count.eval_in(payload, cx), spec.time.eval_in(payload, cx)) else { return None };
+    if !st.seen {
+        *st = RateState { count, time, rate: None, moved_ms: now_ms, seen: true };
+        return None;
+    }
+    let dt = forward(time - st.time, spec.time_wrap) * spec.time_unit;
+    if dt > 0.0 {
+        let dc = forward(count - st.count, spec.count_wrap);
+        st.rate = Some(dc / dt);
+        st.count = count;
+        st.time = time;
+        st.moved_ms = now_ms;
+    } else if now_ms.saturating_sub(st.moved_ms) >= spec.stop_ms {
+        // the same event again and again: nothing is turning
+        st.rate = Some(0.0);
+    }
+    st.rate
+}
+
+fn decode(bundle: &Bundle, table: &Table, payload: &[u8], rates: &mut [RateState], now_ms: u64, settings: &Settings) -> (BTreeMap<String, Value>, Vec<String>) {
     let mut fields = BTreeMap::new();
     let mut out_of_range = Vec::new();
-    for tf in &table.fields {
-        if let Some(cond) = &tf.only_when {
-            if cond.eval(payload).unwrap_or(0.0) == 0.0 {
+    let parts = place_parts(table, payload);
+    let wheel_m = Some(settings.wheel_circumference_mm as f64 / 1000.0);
+    for (i, tf) in table.fields.iter().enumerate() {
+        let mut cx = Cx { parts: &parts, rate: None, wheel_m };
+        if let (Some(spec), Some(st)) = (&tf.rate, rates.get_mut(i)) {
+            cx.rate = advance_rate(spec, st, payload, &cx, now_ms);
+            if cx.rate.is_none() {
                 continue;
             }
         }
-        let (Some(v), Some(def)) = (tf.value.eval(payload), bundle.field(&tf.field)) else { continue };
+        if let Some(cond) = &tf.only_when {
+            if cond.eval_in(payload, &cx).unwrap_or(0.0) == 0.0 {
+                continue;
+            }
+        }
+        let (Some(v), Some(def)) = (tf.value.eval_in(payload, &cx), bundle.field(&tf.field)) else { continue };
         let v = round_to(v, def.decimals);
         if v.is_nan() || v < def.min || v > def.max {
             out_of_range.push(tf.field.clone());
@@ -704,9 +857,10 @@ mod tests {
                 only_when: Some(Expr::Bin(BinOp::Eq, Box::new(Expr::U8(0)), Box::new(Expr::Num(0.0)))),
                 instance: Some(Instance { label: "bike".into(), value: Expr::U8(1) }),
                 stale_after_ms: 3000,
+                layout: None,
                 fields: vec![
-                    TableField { field: "power".into(), value: Expr::U16le(2), only_when: None },
-                    TableField { field: "energy".into(), value: Expr::U8(1), only_when: None },
+                    TableField { field: "power".into(), value: Expr::U16le(2), only_when: None, rate: None },
+                    TableField { field: "energy".into(), value: Expr::U8(1), only_when: None, rate: None },
                 ],
             }],
         }
@@ -880,7 +1034,8 @@ mod tests {
             only_when: Some(Expr::Bin(BinOp::Ne, Box::new(Expr::I16le(1)), Box::new(Expr::Num(32767.0)))),
             instance: None,
             stale_after_ms: 5000,
-            fields: vec![TableField { field: "temp".into(), value: Expr::Bin(BinOp::Div, Box::new(Expr::I16le(1)), Box::new(Expr::Num(100.0))), only_when: None }],
+            layout: None,
+            fields: vec![TableField { field: "temp".into(), value: Expr::Bin(BinOp::Div, Box::new(Expr::I16le(1)), Box::new(Expr::Num(100.0))), only_when: None, rate: None }],
         });
         b
     }

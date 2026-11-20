@@ -116,8 +116,10 @@ for any device or any contributor (`SECURITY.md`, "The boundary"):
 - **Nothing outside the packet it was handed**: no files, no network, no other device, nothing about the
   rider, the app or the machine.
 - **Nothing sent to the device**: no commands, no writes, no handshake.
-- **No unbounded work**: the arithmetic is capped in depth and size, and the check refuses a table that
-  goes past the cap.
+- **No unbounded work**: the arithmetic is capped in depth and size, a layout has at most 32 parts, and
+  the check refuses a table that goes past the cap.
+- **Nothing kept but a counter**: a `rate` remembers the last count and event time of its own counter,
+  for its own source. Nothing else carries from one packet to the next.
 
 A pull request that adds a way around any of these (a new operation that reads something other than the
 packet, a field that carries a command, a table option that makes the host fetch or run something) is

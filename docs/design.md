@@ -61,11 +61,21 @@ once, reviewed by maintainers, and are few:
 |---|---|
 | Broadcast | Values inside the BLE advertisement (manufacturer data or service data); the device never accepts a connection |
 | Notify | Connect, subscribe to a characteristic, fixed layout |
-| Flagged notify | The same, with optional values switched on by flag bits |
-| Standard profiles | Heart Rate, Cycling Power, Speed and Cadence, Running Speed, FTMS data — layout already fixed by the Bluetooth standards, so no table is needed |
+| Flagged notify | The same, with optional values switched on by flag bits: a table's `layout` (built) |
+| Standard profiles | Heart Rate, Cycling Power, Speed and Cadence, Running Speed and Cadence, FTMS bike, rower and treadmill data: the **standard tables** (`registry/tables/std-*.yaml`, built 2026-11-20) |
 
-Because the standard profiles are readers too, an app can use OFP as its only way of reading
-sensors. Existing apps do not have to: OFP can sit beside the parsers an app already has.
+*Decided 2026-11-20:* the standard profiles are **tables**, not decoders written into the core. Two
+general additions to the table language made that possible (a `layout` whose parts are switched on by
+flag bits, and a `rate` from a running counter), and proprietary devices use them too. The standard
+tables are maintained by the maintainers, checked like any other table, and read only: OFP never
+writes to a control point. A device that offers several standard services (a trainer with FTMS,
+Cycling Power and Heart Rate) appears as one source per service, all on one connection, the way apps
+already treat them as separate sensors.
+
+Because the standard profiles are read too, an app can use OFP as its only way of reading
+sensors. Existing apps do not have to: OFP can sit beside the parsers an app already has, and an
+app that names the services it reads itself (`handled_services`) is never offered OFP's tables for
+them.
 
 - **Generic when possible, specific when not.** A reader may be named after a single device when
   that device's shape is truly its own. It can be folded into a generic reader later, when a second
@@ -113,7 +123,9 @@ automated checks replay it.
 | `only_when` | Packets where this is false are ignored |
 | `instance` | `label` and `value`: what tells two identical devices apart. It becomes part of the source id (`keiser-m3i:197`) |
 | `stale_after_ms` | After this long without a packet, instantaneous fields read as zero |
-| `fields` | Field key → expression, or `{ value, only_when }` |
+| `layout` | Values whose position depends on flag bits: `start` (where the first part begins) and `parts`, each `{ name, type, when }`. A part is in the packet when its `when` (read at fixed positions, normally the flags) is true, and sits right after the parts before it that are there. Types: `u8 i8 u16le i16le u24le i24le u32le`, and `skip1`…`skip4` for bytes nothing reads. Fields read a part by its name. At most 32 parts |
+| `fields` | Field key → expression, or `{ value, only_when, rate }` |
+| `rate` in a field | The speed of a running counter (crank or wheel revolutions, strokes): `{ count, time, count_wrap, time_wrap, time_unit, stop_ms }`. Between two packets with a new event, `rate` in the field's `value` is the counter's change per second (both counters may start again from zero at their wrap). The same event repeated for `stop_ms` (default 3000) reads 0. `wheel` is the wheel's circumference in metres, as the app set it. The only thing a table keeps between packets: the last count and time of each rate, per source |
 
 Expressions read bytes from the payload (positions count from its start, after the company id) and
 combine them:
@@ -127,7 +139,8 @@ u8[3]  i8[3]  u16le[4]  u16be[4]  i16le[4]  i16be[4]  u24le[4]  u32le[4]
 ```
 
 Bit operators bind tighter than comparisons, so `u8[2] & 0x80 == 0` means what it reads like.
-There are no variables, loops or functions. Expressions are parsed when the registry is compiled;
+In a table with a `layout`, a part's name reads that part; in a field with a `rate`, `rate` and
+`wheel` are as above. There are no variables, loops or functions. Expressions are parsed when the registry is compiled;
 the core receives a small tree (at most 16 levels and 64 nodes) and only evaluates it. A read
 outside the packet or a division by zero gives no value for that field.
 
@@ -243,8 +256,9 @@ So the same device can be all-direct in one app and partly OFP in another, and n
 list of "OFP devices": it follows from what the app said and what the device has. An app that
 passes an empty list uses OFP as its only way of reading sensors.
 
-Still open: the OFP service's UUIDs and byte layout, which standard service a source offers when
-several would fit, and what OFP assumes when an app passes no list at all. Until this exists, a host uses the JSON messages of the host interface below.
+*Built 2026-11-20:* the list is honoured: a standard table for a service on the list is never
+offered. Still open: the OFP service's UUIDs and byte layout, and what OFP assumes when an app passes
+no list at all (today: it reads everything). Until this exists, a host uses the JSON messages of the host interface below.
 
 ## Where OFP runs
 

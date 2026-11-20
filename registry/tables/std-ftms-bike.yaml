@@ -1,0 +1,56 @@
+id: std-ftms-bike
+name: Fitness machine (bike)
+reader: notify
+version: 1
+status: draft
+provenance: >
+  The Bluetooth Fitness Machine Service (FTMS) and its Indoor Bike Data characteristic (0x2AD2), as
+  the Bluetooth SIG publishes them in the GATT Specification Supplement. Reading only: OFP never
+  writes to the Fitness Machine Control Point. A standard table: maintained by the maintainers.
+verified_on:
+  - not verified on a device yet
+
+match:
+  - service: "1826"
+
+notify:
+  service: "1826"
+  characteristic: "2ad2"
+  min_length: 2
+
+# 0-1   flags. Each part below is present when its flag bit is set, except the speed, which is
+#       present when bit 0 ("more data") is clear. Units: speed 0.01 km/h, cadence 0.5 rpm, distance
+#       m, resistance 0.1 level, power W, energy kcal (0xFFFF = not available), heart rate bpm, time s.
+stale_after_ms: 5000
+
+layout:
+  start: 2
+  parts:
+    - { name: speed, type: u16le, when: "!(u16le[0] & 1)" }
+    - { name: avg_speed, type: skip2, when: "u16le[0] & 2" }
+    - { name: cadence, type: u16le, when: "u16le[0] & 4" }
+    - { name: avg_cadence, type: skip2, when: "u16le[0] & 8" }
+    - { name: distance, type: u24le, when: "u16le[0] & 16" }
+    - { name: resistance, type: i16le, when: "u16le[0] & 32" }
+    - { name: power, type: i16le, when: "u16le[0] & 64" }
+    - { name: avg_power, type: skip2, when: "u16le[0] & 128" }
+    - { name: energy, type: u16le, when: "u16le[0] & 256" }
+    - { name: energy_per_hour, type: skip2, when: "u16le[0] & 256" }
+    - { name: energy_per_minute, type: skip1, when: "u16le[0] & 256" }
+    - { name: heart_rate, type: u8, when: "u16le[0] & 512" }
+    - { name: met, type: skip1, when: "u16le[0] & 1024" }
+    - { name: elapsed, type: u16le, when: "u16le[0] & 2048" }
+
+fields:
+  speed: speed / 100
+  cadence: cadence / 2
+  power: power
+  distance: distance
+  resistance: resistance / 10
+  energy:
+    value: energy
+    only_when: energy != 65535
+  heart_rate:
+    value: heart_rate
+    only_when: heart_rate > 0
+  elapsed_time: elapsed

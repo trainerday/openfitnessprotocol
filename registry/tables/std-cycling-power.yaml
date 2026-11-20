@@ -1,0 +1,45 @@
+id: std-cycling-power
+name: Cycling Power
+reader: notify
+version: 1
+status: draft
+provenance: >
+  The Bluetooth Cycling Power Service and its Cycling Power Measurement characteristic (0x2A63), as
+  the Bluetooth SIG publishes them in the GATT Specification Supplement. A standard table: maintained
+  by the maintainers.
+verified_on:
+  - not verified on a device yet
+
+match:
+  - service: "1818"
+
+notify:
+  service: "1818"
+  characteristic: "2a63"
+  min_length: 4
+
+# 0-1   flags, then the parts below in this order, each only when its flag is set:
+# bit 0 pedal power balance (1), bit 2 accumulated torque (2), bit 4 wheel revolutions (4) and the
+# last wheel event time (2, 1/2048 s), bit 5 crank revolutions (2) and the last crank event time
+# (2, 1/1024 s). Later parts (forces, angles, dead spots, energy) are not read.
+stale_after_ms: 5000
+
+layout:
+  start: 2
+  parts:
+    - { name: power, type: i16le }
+    - { name: balance, type: skip1, when: "u16le[0] & 1" }
+    - { name: torque, type: skip2, when: "u16le[0] & 4" }
+    - { name: wheel_revs, type: u32le, when: "u16le[0] & 16" }
+    - { name: wheel_time, type: u16le, when: "u16le[0] & 16" }
+    - { name: crank_revs, type: u16le, when: "u16le[0] & 32" }
+    - { name: crank_time, type: u16le, when: "u16le[0] & 32" }
+
+fields:
+  power: power
+  cadence:
+    rate: { count: crank_revs, time: crank_time, count_wrap: 65536, time_wrap: 65536, time_unit: 1/1024 }
+    value: rate * 60
+  speed:
+    rate: { count: wheel_revs, time: wheel_time, count_wrap: 4294967296, time_wrap: 65536, time_unit: 1/2048 }
+    value: rate * wheel * 3.6

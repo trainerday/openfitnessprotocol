@@ -1,0 +1,28 @@
+id: std-running
+name: Running Speed and Cadence
+reader: notify
+version: 1
+status: draft
+provenance: >
+  The Bluetooth Running Speed and Cadence Service and its RSC Measurement characteristic (0x2A53),
+  as the Bluetooth SIG publishes them in the GATT Specification Supplement. A standard table:
+  maintained by the maintainers.
+verified_on:
+  - not verified on a device yet
+
+match:
+  - service: "1814"
+
+notify:
+  service: "1814"
+  characteristic: "2a53"
+  min_length: 4
+
+# 0     flags (bit 0 walking/running, bit 1 stride length present, bit 2 total distance present)
+# 1-2   speed, 1/256 metre per second
+# 3     cadence, steps per minute
+stale_after_ms: 5000
+
+fields:
+  speed: u16le[1] / 256 * 3.6
+  running_cadence: u8[3]

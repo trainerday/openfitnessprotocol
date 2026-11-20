@@ -1,6 +1,6 @@
 //! The compiled registry: fields and tables, as the core loads them.
 
-use crate::expr::Expr;
+use crate::expr::{Expr, PartType};
 use alloc::string::String;
 use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
@@ -76,7 +76,47 @@ pub struct Table {
     pub notify: Option<NotifySpec>,
     /// After this long without a packet, instantaneous values read as zero.
     pub stale_after_ms: u64,
+    /// Values whose position depends on flag bits: each part follows the ones before it that are in
+    /// the packet. Fields read a part with `Expr::Part`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layout: Option<Layout>,
     pub fields: Vec<TableField>,
+}
+
+/// At most this many parts in a layout.
+pub const MAX_LAYOUT_PARTS: usize = 32;
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Layout {
+    /// Where the first part starts (after the flags).
+    pub start: usize,
+    pub parts: Vec<LayoutPart>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct LayoutPart {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub ty: PartType,
+    /// The part is in the packet only when this is true (read from fixed positions: the flags).
+    /// Always there when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub present_when: Option<Expr>,
+}
+
+/// A value that is the speed of a running counter: revolutions, strokes, steps. Kept between packets
+/// of the same source: the last count and event time, nothing else.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct RateSpec {
+    pub count: Expr,
+    /// When the last counted event happened, in ticks of `time_unit` seconds.
+    pub time: Expr,
+    /// The counter and the time start again from zero at these values (65536 for 16 bits).
+    pub count_wrap: f64,
+    pub time_wrap: f64,
+    pub time_unit: f64,
+    /// No new event for this long: the rate reads zero (the crank stopped).
+    pub stop_ms: u64,
 }
 
 /// Where a connected device sends what a `notify` table reads. UUIDs as text, any case, with or
@@ -120,6 +160,9 @@ pub struct TableField {
     pub value: Expr,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub only_when: Option<Expr>,
+    /// The field is a rate: `value` reads it as `Expr::Rate`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rate: Option<RateSpec>,
 }
 
 impl Bundle {

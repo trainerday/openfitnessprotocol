@@ -1,0 +1,13 @@
+id: 20
+key: incline
+name: Incline
+unit: "%"
+type: decimal
+decimals: 1
+min: -30
+max: 50
+kind: instantaneous
+tier: experimental
+tolerance: { abs: 0.5, pct: 0 }
+description: >
+  The slope of a treadmill's belt right now, in percent (rise per 100 of distance).

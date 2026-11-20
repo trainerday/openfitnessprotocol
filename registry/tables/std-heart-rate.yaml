@@ -1,0 +1,27 @@
+id: std-heart-rate
+name: Heart Rate
+reader: notify
+version: 1
+status: draft
+provenance: >
+  The Bluetooth Heart Rate Service and its Heart Rate Measurement characteristic (0x2A37), as the
+  Bluetooth SIG publishes them in the GATT Specification Supplement. A standard table: maintained by
+  the maintainers.
+verified_on:
+  - not verified on a device yet
+
+match:
+  - service: "180d"
+
+notify:
+  service: "180d"
+  characteristic: "2a37"
+  min_length: 2
+
+# 0     flags: bit 0 = the heart rate is 16 bits (else 8)
+# 1     heart rate, beats per minute (1 or 2 bytes)
+# then optional energy expended and RR intervals, not read here
+stale_after_ms: 5000
+
+fields:
+  heart_rate: "u8[0] & 1 ? u16le[1] : u8[1]"

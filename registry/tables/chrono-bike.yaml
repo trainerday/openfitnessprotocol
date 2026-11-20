@@ -1,0 +1,27 @@
+id: chrono-bike
+name: Chrono bike
+reader: notify
+version: 1
+status: draft
+provenance: >
+  Written from chrono-bike.spec.md (facts learned from studying QZ, written down in a separate
+  session; this table was written without seeing QZ's code). Not yet checked on a bike.
+verified_on:
+  - not verified on a bike yet
+
+match:
+  - name_prefix: "CHRONO "
+    service: a026ee07-0a7d-4ab3-97fa-f1500f9feb8b
+
+notify:
+  service: a026ee07-0a7d-4ab3-97fa-f1500f9feb8b
+  characteristic: a026e01d-0a7d-4ab3-97fa-f1500f9feb8b
+  min_length: 19
+
+# 19 bytes, little-endian, unsigned: 6-7 speed (0.01 km/h), 8 cadence (half rpm), 17-18 power (W).
+stale_after_ms: 5000
+
+fields:
+  speed: u16le[6] / 100
+  cadence: u8[8] / 2
+  power: u16le[17]

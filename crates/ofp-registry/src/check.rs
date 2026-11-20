@@ -482,6 +482,84 @@ mod tests {
         assert!(r.timeline.iter().all(|d| !d.fields.contains_key("core_temperature")));
     }
 
+    /// A standard table, fed notifications 1 s apart.
+    fn standard(reg: &Registry, service: &str, chr: &str, packets: &[&str]) -> std::collections::BTreeMap<String, f64> {
+        last_values(reg, &connected_capture("Sensor", service, chr, packets, &[])).1
+    }
+
+    #[test]
+    fn standard_heart_rate_8_and_16_bits() {
+        let reg = registry::load(&registry_dir()).unwrap();
+        assert_eq!(standard(&reg, "180d", "2a37", &["00 8c"])["heart_rate"], 140.0);
+        // 16 bits (flag bit 0): 0x00b4 = 180
+        assert_eq!(standard(&reg, "180d", "2a37", &["01 b400"])["heart_rate"], 180.0);
+    }
+
+    #[test]
+    fn standard_cycling_power_finds_the_crank_after_the_optional_parts() {
+        let reg = registry::load(&registry_dir()).unwrap();
+        // crank only (bit 5): 250 W; crank 10 revolutions at 1024 ticks, then 11 at 2048 → 1 per second = 60 rpm
+        let v = standard(&reg, "1818", "2a63", &["2000 fa00 0a00 0004", "2000 fa00 0b00 0008"]);
+        assert_eq!((v["power"], v["cadence"]), (250.0, 60.0));
+        // balance (bit 0), torque (bit 2), wheel (bit 4) and crank (bit 5): the crank moves 1 + 2 + 6 bytes on.
+        // wheel: 2 turns in 1 s (2048 ticks of 1/2048 s) with a 2105 mm wheel = 15.2 km/h; crank: 90 rpm
+        let v = standard(&reg, "1818", "2a63", &["3500 c800 32 1027 64000000 0008 1400 0004", "3500 c800 32 1027 66000000 0010 1500 aa06"]);
+        assert_eq!((v["power"], v["speed"]), (200.0, 15.2));
+        assert!((v["cadence"] - 90.0).abs() < 0.2, "{v:?}");
+        // a packet without crank data says nothing about the cadence
+        let v = standard(&reg, "1818", "2a63", &["0000 6400"]);
+        assert_eq!(v["power"], 100.0);
+        assert!(!v.contains_key("cadence"));
+    }
+
+    #[test]
+    fn standard_speed_and_cadence_counts_across_the_wrap_and_stops() {
+        let reg = registry::load(&registry_dir()).unwrap();
+        // crank: 65535 → 1 (two revolutions) while its time goes 65000 → 488 (1024 ticks = 1 s): 120 rpm
+        let v = standard(&reg, "1816", "2a5b", &["02 ffff e8fd", "02 0100 e801"]);
+        assert_eq!(v["cadence"], 120.0);
+        // the same crank event again and again: still 120 at first, 0 once 3 s have passed
+        let lines = connected_capture("Sensor", "1816", "2a5b", &["02 0a00 0004", "02 0b00 0008", "02 0b00 0008", "02 0b00 0008", "02 0b00 0008", "02 0b00 0008"], &[]);
+        let r = check_lines(&reg, None, "test", &lines);
+        let cadence: Vec<f64> = r.timeline.iter().filter_map(|d| d.fields.get("cadence").copied()).collect();
+        assert_eq!(cadence.first(), Some(&60.0));
+        assert_eq!(cadence.last(), Some(&0.0), "{cadence:?}");
+        // wheel only: 3 turns in 1 s, 2105 mm: 22.7 km/h
+        let v = standard(&reg, "1816", "2a5b", &["01 0a000000 0004", "01 0d000000 0008"]);
+        assert_eq!(v["speed"], 22.7);
+    }
+
+    #[test]
+    fn standard_ftms_bike_reads_the_parts_its_flags_say_are_there() {
+        let reg = registry::load(&registry_dir()).unwrap();
+        // flags 0x0244: speed (bit 0 clear), cadence, power, heart rate.
+        // 32.00 km/h, 90 rpm (180 halves), 250 W, 140 bpm
+        let v = standard(&reg, "1826", "2ad2", &["4402 800c b400 fa00 8c"]);
+        assert_eq!((v["speed"], v["cadence"], v["power"], v["heart_rate"]), (32.0, 90.0, 250.0, 140.0));
+        // everything up to the elapsed time (flags 0x0bfe with bit 0 clear... speed, avg speed, cadence, avg
+        // cadence, distance 1234 m, resistance 3.5, power 180, avg power, energy 55 kcal, heart rate 0 = no strap,
+        // MET, elapsed 600 s)
+        let v = standard(&reg, "1826", "2ad2", &["fe0f e803 e803 a000 a000 d20400 2300 b400 b400 3700 ffff ff 00 0a 5802"]);
+        assert_eq!((v["speed"], v["cadence"], v["distance"], v["resistance"], v["power"], v["energy"], v["elapsed_time"]), (10.0, 80.0, 1234.0, 3.5, 180.0, 55.0, 600.0));
+        assert!(!v.contains_key("heart_rate"), "0 = no strap");
+        // "more data" (bit 0 set): no speed in this packet
+        let v = standard(&reg, "1826", "2ad2", &["4100 fa00"]);
+        assert_eq!(v["power"], 250.0);
+        assert!(!v.contains_key("speed"));
+    }
+
+    #[test]
+    fn standard_tables_are_left_to_an_app_that_reads_the_service_itself() {
+        let reg = registry::load(&registry_dir()).unwrap();
+        let mut core = ofp_core::Core::from_bundle(reg.bundle.clone()).unwrap();
+        core.settings_mut().handled_services = Some(vec!["180D".into(), "00001826-0000-1000-8000-00805f9b34fb".into()]);
+        let services = vec![String::from("180d"), String::from("1826"), String::from("1818")];
+        let adv = ofp_core::Advertisement { device_id: "dev1", name: Some("KICKR"), rssi: Some(-50), manufacturer_data: &[], services: &services, now_ms: 0 };
+        let offered: Vec<String> = core.on_advertisement(&adv).into_iter().filter_map(|m| match m { ofp_core::Message::SourceAppeared { source_id, .. } => Some(source_id), _ => None }).collect();
+        assert!(offered.iter().all(|s| !s.starts_with("std-heart-rate") && !s.starts_with("std-ftms")), "{offered:?}");
+        assert!(offered.iter().any(|s| s.starts_with("std-cycling-power")), "{offered:?}");
+    }
+
     #[test]
     fn the_tymewear_draft_decodes_a_breath_and_skips_the_other_packets() {
         let reg = registry::load(&registry_dir()).unwrap();
@@ -494,9 +572,11 @@ mod tests {
         let (source, v) = last_values(&reg, &lines);
         assert!(source.starts_with("tymewear-vitalpro:"));
         assert_eq!((v["breathing_rate"], v["tidal_volume"], v["minute_ventilation"]), (15.0, 1.8, 27.0));
-        // the strap's heart-rate pod is not this table's
+        // the strap's heart-rate pod is not this table's: the standard Heart Rate table reads it
         let pod = connected_capture("TymeHR 55", "180d", "2a37", &["0048"], &[]);
-        assert_eq!(check_lines(&reg, None, "test", &pod).decoded, 0);
+        let (source, v) = last_values(&reg, &pod);
+        assert!(source.starts_with("std-heart-rate:"), "{source}");
+        assert_eq!(v["heart_rate"], 72.0);
     }
 
     #[test]

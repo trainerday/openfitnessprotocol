@@ -1,0 +1,36 @@
+id: xcx-bike
+name: XCX bike
+reader: notify
+version: 1
+status: draft
+provenance: >
+  Written from xcx-bike.spec.md (facts learned from studying QZ, written down in a separate session;
+  this table was written without seeing QZ's code). Not yet checked on a bike.
+verified_on:
+  - not verified on a bike yet
+
+match:
+  - name_prefix: XCX-
+
+notify:
+  service: fff0
+  characteristic: fff6
+  min_length: 20
+
+# Packets start FA 05, 20 or 23 bytes. Little-endian, unsigned:
+#   6-7 speed (0.1 km/h), 8-10 distance (0.1 km), 11-12 energy (kcal), 13-14 cadence (rpm),
+#   17 power (W; only this byte is known, so up to 255 W), 18-19 resistance level.
+# The bike also offers FTMS, whose distance is reported to be wrong: this table reads its own service.
+# TO CHECK ON A BIKE: whether byte 16 or 18 is power's high byte above 255 W.
+only_when: u8[0] == 0xfa && u8[1] == 5
+stale_after_ms: 5000
+
+fields:
+  speed: u16le[6] / 10
+  distance: u24le[8] * 100
+  energy: u16le[11]
+  cadence: u16le[13]
+  power:
+    value: u8[17]
+    only_when: u16le[13] > 0
+  resistance: u16le[18]

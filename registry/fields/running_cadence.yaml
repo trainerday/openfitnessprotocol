@@ -1,0 +1,13 @@
+id: 19
+key: running_cadence
+name: Running cadence
+unit: spm
+type: int
+decimals: 0
+min: 0
+max: 300
+kind: instantaneous
+tier: experimental
+tolerance: { abs: 3, pct: 3 }
+description: >
+  Running steps per minute right now, as the sensor counts them.

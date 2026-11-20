@@ -52,7 +52,10 @@ example that matches this app's Bluetooth library (examples/…/ofpDevices.js), 
    list, how connect and disconnect are handled, and where readings reach the screens.
 2. Wire the four hooks in one new file. Keep everything OFP-specific in it; touch the app's own
    files only for the hook calls.
-3. Pass the services this app already reads to `iRead`.
+3. Pass the services this app already reads to `iRead`. OFP then leaves those to the app. An empty
+   list means OFP reads the standard sensors too (heart rate, power, speed and cadence, running,
+   FTMS bikes, rowers and treadmills). A device with several services can be asked for by several
+   sources: connect it once and subscribe to everything they ask for.
 4. Find out when this app stops scanning, and keep the scan running while `ofp.scanNeed()` says so.
 5. Tell me what an OFP device has to look like for this app's device list and screens, before
    writing a stand-in for it.

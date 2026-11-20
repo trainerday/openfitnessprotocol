@@ -262,7 +262,12 @@ const STANDARD_SERVICES = { '1826': 'FTMS', '1818': 'Cycling Power', '1816': 'Sp
 function readsAs(d) {
   const by = [];
   if (d.known) by.push(d.known);
-  for (const u of d.services) if (STANDARD_SERVICES[u]) by.push(STANDARD_SERVICES[u]);
+  // a standard the core already names (its table "Heart Rate", "Fitness machine (bike)", …) is not repeated
+  const named = (d.known || '').toLowerCase();
+  for (const u of d.services) {
+    const label = STANDARD_SERVICES[u];
+    if (label && !(named.startsWith('fitness machine') && u === '1826') && !named.startsWith(label.toLowerCase())) by.push(label);
+  }
   return by;
 }
 
@@ -733,7 +738,10 @@ function liveGroups() {
   }
   const T = Tester.state();
   const now = testerNow();
+  // the standard table the core is already showing above is not shown twice
+  const shownByTable = { 'std-ftms-bike': 'FTMS', 'std-cycling-power': 'CPS', 'std-speed-cadence': 'CSC', 'std-heart-rate': 'HR' }[src && src.table];
   for (const [proto, def] of Object.entries(STANDARD)) {
+    if (proto === shownByTable) continue;
     const v = T.src[proto];
     if (v.at === undefined) continue;
     const tiles = def.keys.filter((k) => v[k] !== undefined).map((k) => ({ id: proto + ':' + k, proto, key: k, f: { key: proto + '-' + k, ...STANDARD_FIELDS[k] }, value: v[k], stale: now - v.at > 4000 }));

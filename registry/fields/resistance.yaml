@@ -1,0 +1,14 @@
+id: 16
+key: resistance
+name: Resistance
+unit: ""
+type: decimal
+decimals: 1
+min: -100
+max: 300
+kind: instantaneous
+tier: experimental
+tolerance: { abs: 1, pct: 0 }
+description: >
+  The machine's resistance level right now, on the machine's own scale (a bike's or rower's levels).
+  Not comparable between machines.

@@ -1,0 +1,13 @@
+id: 18
+key: stroke_count
+name: Strokes
+unit: ""
+type: int
+decimals: 0
+min: 0
+max: 1000000
+kind: cumulative
+tier: experimental
+tolerance: { abs: 1, pct: 0 }
+description: >
+  Rowing strokes since the session started.

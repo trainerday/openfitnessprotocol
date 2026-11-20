@@ -1,7 +1,7 @@
 //! Reads the registry (fields and tables as YAML) and compiles it into the bundle the core loads.
 
 use crate::exprparse;
-use ofp_core::{Bundle, Expr, FieldDef, FieldType, Instance, MatchRule, NotifySpec, SampleKind, Table, TableField, Tier, BUNDLE_VERSION};
+use ofp_core::{Bundle, Expr, FieldDef, FieldType, Instance, Layout, LayoutPart, MatchRule, NotifySpec, PartType, RateSpec, SampleKind, Table, TableField, Tier, BUNDLE_VERSION, MAX_LAYOUT_PARTS};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -59,6 +59,43 @@ struct MatchSrc {
     when: Option<String>,
 }
 
+/// `layout:` — values whose position depends on flag bits.
+#[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+struct LayoutSrc {
+    start: usize,
+    parts: Vec<PartSrc>,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+struct PartSrc {
+    name: String,
+    #[serde(rename = "type")]
+    ty: PartType,
+    #[serde(default)]
+    when: Option<String>,
+}
+
+/// `rate:` in a field — the speed of a running counter.
+#[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+struct RateSrc {
+    count: String,
+    time: String,
+    count_wrap: f64,
+    time_wrap: f64,
+    /// Seconds per tick of `time`, as a number or an expression of numbers (`1/1024`).
+    time_unit: serde_yaml_ng::Value,
+    /// No new event for this long: the rate reads zero. 3 s when not given (a crank turning at 20 rpm).
+    #[serde(default = "default_stop_ms")]
+    stop_ms: u64,
+}
+
+fn default_stop_ms() -> u64 {
+    3000
+}
+
 #[derive(Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 struct NotifySrc {
@@ -95,6 +132,8 @@ struct TableSrc {
     #[serde(default)]
     notify: Option<NotifySrc>,
     stale_after_ms: u64,
+    #[serde(default)]
+    layout: Option<LayoutSrc>,
     fields: serde_yaml_ng::Mapping,
 }
 
@@ -302,6 +341,17 @@ pub fn compile_table(text: &str, shown: &str, stem: Option<&str>, known: &BTreeS
         }
     };
     let before = errors.len();
+    let part_names: Vec<String> = t.layout.as_ref().map(|l| l.parts.iter().map(|p| p.name.clone()).collect()).unwrap_or_default();
+    // the fields may read the layout's parts by name; nothing else may
+    let field_expr = |what: &str, src: &str, errors: &mut Vec<String>| -> Option<Expr> {
+        match exprparse::parse_with(src, &part_names) {
+            Ok(e) => Some(e),
+            Err(e) => {
+                errors.push(format!("{shown}: {what}: {e}"));
+                None
+            }
+        }
+    };
     let expr = |what: &str, src: &str, errors: &mut Vec<String>| -> Option<Expr> {
         match exprparse::parse(src) {
             Ok(e) => Some(e),
@@ -363,6 +413,24 @@ pub fn compile_table(text: &str, shown: &str, stem: Option<&str>, known: &BTreeS
         matches.push(MatchRule { manufacturer_id: m.manufacturer_id, name_prefix: m.name_prefix.clone(), service: m.service.clone(), min_length: m.min_length, when });
     }
     let only_when = t.only_when.as_deref().and_then(|w| expr("only_when", w, errors));
+    let layout = t.layout.as_ref().map(|l| {
+        if l.parts.is_empty() || l.parts.len() > MAX_LAYOUT_PARTS {
+            errors.push(format!("{shown}: layout: between 1 and {MAX_LAYOUT_PARTS} parts"));
+        }
+        let mut seen = BTreeSet::new();
+        let parts = l
+            .parts
+            .iter()
+            .map(|p| {
+                if !id_ok(&p.name.replace('_', "-")) || matches!(p.name.as_str(), "rate" | "wheel") || !seen.insert(p.name.clone()) {
+                    errors.push(format!("{shown}: layout part '{}': names are lower case letters, digits and _, not rate or wheel, and each used once", p.name));
+                }
+                let present_when = p.when.as_deref().and_then(|w| expr(&format!("layout part '{}' when", p.name), w, errors));
+                LayoutPart { name: p.name.clone(), ty: p.ty, present_when }
+            })
+            .collect();
+        Layout { start: l.start, parts }
+    });
     let instance = t.instance.as_ref().and_then(|i| expr("instance", &i.value, errors).map(|value| Instance { label: i.label.clone(), value }));
     let mut tfields = Vec::new();
     if t.fields.is_empty() {
@@ -377,24 +445,47 @@ pub fn compile_table(text: &str, shown: &str, stem: Option<&str>, known: &BTreeS
             errors.push(format!("{shown}: field '{key}' is not in registry/fields"));
             continue;
         }
-        let (value_src, when_src) = match v {
+        let (value_src, when_src, rate_src) = match v {
             serde_yaml_ng::Value::Mapping(m) => {
-                let extra: Vec<_> = m.keys().filter_map(|k| k.as_str()).filter(|k| *k != "value" && *k != "only_when").collect();
+                let extra: Vec<_> = m.keys().filter_map(|k| k.as_str()).filter(|k| !matches!(*k, "value" | "only_when" | "rate")).collect();
                 if !extra.is_empty() {
                     errors.push(format!("{shown}: field '{key}': unknown setting {}", extra.join(", ")));
                 }
-                (m.get("value").and_then(scalar_to_expr), m.get("only_when").and_then(scalar_to_expr))
+                (m.get("value").and_then(scalar_to_expr), m.get("only_when").and_then(scalar_to_expr), m.get("rate").cloned())
             }
-            other => (scalar_to_expr(other), None),
+            other => (scalar_to_expr(other), None, None),
+        };
+        let rate = match rate_src.map(serde_yaml_ng::from_value::<RateSrc>) {
+            None => None,
+            Some(Err(e)) => {
+                errors.push(format!("{shown}: field '{key}' rate: {e}"));
+                continue;
+            }
+            Some(Ok(r)) => {
+                let unit = scalar_to_expr(&r.time_unit).and_then(|u| expr(&format!("field '{key}' rate time_unit"), &u, errors)).and_then(|e| e.eval(&[]));
+                let count = field_expr(&format!("field '{key}' rate count"), &r.count, errors);
+                let time = field_expr(&format!("field '{key}' rate time"), &r.time, errors);
+                match (count, time, unit) {
+                    (Some(count), Some(time), Some(time_unit)) if time_unit > 0.0 => Some(RateSpec { count, time, count_wrap: r.count_wrap, time_wrap: r.time_wrap, time_unit, stop_ms: r.stop_ms }),
+                    _ => {
+                        errors.push(format!("{shown}: field '{key}' rate: count, time and a time_unit above 0 are needed"));
+                        continue;
+                    }
+                }
+            }
         };
         let Some(value_src) = value_src else {
             errors.push(format!("{shown}: field '{key}' has no value"));
             continue;
         };
-        let value = expr(&format!("field '{key}'"), &value_src, errors);
-        let only_when = when_src.and_then(|w| expr(&format!("field '{key}' only_when"), &w, errors));
+        let value = field_expr(&format!("field '{key}'"), &value_src, errors);
+        let only_when = when_src.and_then(|w| field_expr(&format!("field '{key}' only_when"), &w, errors));
         if let Some(value) = value {
-            tfields.push(TableField { field: key.to_string(), value, only_when });
+            let reads_rate = value.uses().1 || only_when.as_ref().is_some_and(|w| w.uses().1);
+            if reads_rate && rate.is_none() {
+                errors.push(format!("{shown}: field '{key}' reads `rate` but has no `rate:`"));
+            }
+            tfields.push(TableField { field: key.to_string(), value, only_when, rate });
         }
     }
     if errors.len() == before {
@@ -402,7 +493,7 @@ pub fn compile_table(text: &str, shown: &str, stem: Option<&str>, known: &BTreeS
         if t.status == "draft" {
             DRAFTS.with(|d| d.borrow_mut().insert(t.id.clone()));
         }
-        Some(Table { id: t.id, name: t.name, reader: t.reader, version: t.version, matches, notify, only_when, instance, stale_after_ms: t.stale_after_ms, fields: tfields })
+        Some(Table { id: t.id, name: t.name, reader: t.reader, version: t.version, matches, notify, only_when, instance, stale_after_ms: t.stale_after_ms, layout, fields: tfields })
     } else {
         None
     }

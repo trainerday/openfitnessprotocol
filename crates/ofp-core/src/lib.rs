@@ -14,9 +14,9 @@ mod bundle;
 mod engine;
 mod expr;
 
-pub use bundle::{Bundle, FieldDef, FieldType, Instance, MatchRule, NotifySpec, SampleKind, Table, TableField, Tier};
+pub use bundle::{Bundle, FieldDef, FieldType, Instance, Layout, LayoutPart, MatchRule, NotifySpec, RateSpec, SampleKind, Table, TableField, Tier, MAX_LAYOUT_PARTS};
 pub use engine::{normalize_uuid, Advertisement, Core, FieldDescription, Message, Settings, Subscription};
-pub use expr::{BinOp, Expr, MAX_EXPR_DEPTH, MAX_EXPR_NODES};
+pub use expr::{BinOp, Cx, Expr, PartType, MAX_EXPR_DEPTH, MAX_EXPR_NODES};
 
 /// Version of the bundle format this core reads.
 pub const BUNDLE_VERSION: u32 = 1;

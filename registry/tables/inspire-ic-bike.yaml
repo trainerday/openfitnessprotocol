@@ -1,0 +1,29 @@
+id: inspire-ic-bike
+name: Inspire IC bike
+reader: notify
+version: 1
+status: draft
+provenance: >
+  Written from inspire-ic-bike.spec.md (facts learned from studying QZ, written down in a separate
+  session; this table was written without seeing QZ's code). Not yet checked on a bike.
+verified_on:
+  - not verified on a bike yet
+
+# The name rule alone is loose (any 8-character name starting IC), so the service is required too.
+match:
+  - name_prefix: IC
+    service: 7ee7e1fa-6fd8-4cbd-b648-a2cdcfa4e7f4
+
+notify:
+  service: 7ee7e1fa-6fd8-4cbd-b648-a2cdcfa4e7f4
+  characteristic: 7ee72ad1-6fd8-4cbd-b648-a2cdcfa4e7f4
+  min_length: 8
+
+# 8 bytes: 3 cadence (rpm), 6 resistance level (1-40); the rest unknown. The bike sends no power
+# and no speed. TO CHECK ON A BIKE: that packets are always exactly 8 bytes (the table cannot tell
+# a longer packet from an 8-byte one).
+stale_after_ms: 5000
+
+fields:
+  cadence: u8[3]
+  resistance: u8[6]

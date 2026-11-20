@@ -7,6 +7,12 @@ How to write it: one line per thing a user would notice, new things first, at mo
 fixes are folded into a last "Bug fixes and improvements". Notes for the next release go under `## Next`;
 `scripts/release.sh` turns that heading into the version and date.
 
+## Next
+
+- Reads the standard sensors: heart rate straps, power meters, speed and cadence sensors, running
+  sensors, and FTMS bikes, rowers and treadmills. Reading only: OFP never controls a device.
+- First drafts for three more spin bikes: Inspire IC, XCX and Chrono, waiting for owners to test them.
+
 ## 0.1.0 (2026-11-20)
 
 - OFP Studio as an app for Mac and Windows, with its own window: no browser or terminal needed.

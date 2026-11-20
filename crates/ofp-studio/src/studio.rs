@@ -1081,7 +1081,15 @@ fn live_messages(s: &mut Session, messages: Vec<Message>, out: &mut Vec<Value>) 
     for m in messages {
         match &m {
             Message::SourceAppeared { source_id, .. } => {
-                if s.live_source_id.is_none() {
+                // One source is shown as the device's table. A device's own table comes before a standard one
+                // (a bike with its own service and FTMS shows its own); the standard ones are shown by the
+                // Tester's readouts beside it.
+                let standard = |id: &str| id.starts_with("std-");
+                let replace = match &s.live_source_id {
+                    None => true,
+                    Some(cur) => standard(cur) && !standard(source_id),
+                };
+                if replace {
                     s.live_source_id = Some(source_id.clone());
                     let v = serde_json::to_value(&m).unwrap_or_default();
                     s.live_source = Some(v.clone());
@@ -1342,11 +1350,11 @@ mod tests {
         // "body temperature" now has close relatives too: the core and skin temperature fields are offered
         let alike = s.add_field(req("body_temperature", "Body temperature", "°C", false)).unwrap();
         assert!(alike["similar"].as_array().unwrap().iter().any(|f| f["key"] == "core_temperature"), "{alike}");
-        // a rep count is new
-        let added = s.add_field(req("rep_count", "Rep count", "reps", false)).unwrap();
-        assert_eq!(added["key"], "rep_count");
-        assert!(s.state_json()["registry"]["fields"].as_array().unwrap().iter().any(|f| f["key"] == "rep_count" && f["tier"] == "experimental"));
-        assert!(s.add_field(req("rep_count", "Rep count", "reps", true)).is_err(), "no duplicates");
+        // a jump height is new (a rep count now has a relative: the rower's stroke count)
+        let added = s.add_field(req("jump_height", "Jump height", "cm", false)).unwrap();
+        assert_eq!(added["key"], "jump_height");
+        assert!(s.state_json()["registry"]["fields"].as_array().unwrap().iter().any(|f| f["key"] == "jump_height" && f["tier"] == "experimental"));
+        assert!(s.add_field(req("jump_height", "Jump height", "cm", true)).is_err(), "no duplicates");
         assert!(s.add_field(req("Bad Key", "Something else entirely", "zz", true)).is_err());
         assert!(!dir.join("registry/fields/Bad Key.yaml").exists());
         assert!(check::run(&dir.join("registry"), false).errors.iter().all(|e| !e.contains("fields/")));

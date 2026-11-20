@@ -1,0 +1,38 @@
+id: std-ftms-treadmill
+name: Fitness machine (treadmill)
+reader: notify
+version: 1
+status: draft
+provenance: >
+  The Bluetooth Fitness Machine Service (FTMS) and its Treadmill Data characteristic (0x2ACD), as
+  the Bluetooth SIG publishes them in the GATT Specification Supplement. Reading only. A standard
+  table: maintained by the maintainers.
+verified_on:
+  - not verified on a device yet
+
+match:
+  - service: "1826"
+
+notify:
+  service: "1826"
+  characteristic: "2acd"
+  min_length: 2
+
+# 0-1   flags. Speed (0.01 km/h) is present when bit 0 ("more data") is clear; average speed
+#       (bit 1), distance (bit 2, m) and inclination (bit 3, 0.1 %) when set. Parts after the
+#       inclination (ramp angle, elevation gain, pace, energy, heart rate, time) are not read until
+#       a recording settles their sizes.
+stale_after_ms: 5000
+
+layout:
+  start: 2
+  parts:
+    - { name: speed, type: u16le, when: "!(u16le[0] & 1)" }
+    - { name: avg_speed, type: skip2, when: "u16le[0] & 2" }
+    - { name: distance, type: u24le, when: "u16le[0] & 4" }
+    - { name: incline, type: i16le, when: "u16le[0] & 8" }
+
+fields:
+  speed: speed / 100
+  distance: distance
+  incline: incline / 10
