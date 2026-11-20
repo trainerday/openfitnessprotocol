@@ -191,6 +191,18 @@ WebAssembly and native builds; requests and replies are JSON:
 
 Connecting, subscribing and writing are not in this version; they arrive with the notify readers.
 
+**What a host's radio really hears** (measured 2026-11-20, a Keiser M3i two metres from a Mac, 24
+minutes of riding, signal around -58 dBm): the computer's built-in radio delivered about 30 of the
+bike's advertisements per minute, roughly a third of what the bike sends, with gaps of 5–10 s about
+twice a minute and one of 40 s. Other broadcasting devices in the room were heard at a similar share.
+The operating system shares that radio with the keyboard, the mouse and WiFi and does not let an app
+change how much of the time it listens. So:
+
+- a table's `stale_after_ms` describes the device; a host sets `min_stale_ms` for its radio (the
+  desktop app uses 10 s) and repeats the standing values in between;
+- a dedicated radio (a USB adapter, an OFP Connect stick, a phone in the foreground) is the way to
+  hear every packet. *The phone numbers are not measured yet.*
+
 Core is written in **Rust** and compiled for desktop, iOS, Android and microcontrollers, so a table
 behaves the same everywhere. The automated checks apply a microcontroller's memory and time limits
 from the start, so everything written before the stick exists will run on it.

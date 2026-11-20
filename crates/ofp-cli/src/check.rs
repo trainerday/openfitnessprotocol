@@ -361,6 +361,56 @@ mod tests {
         assert!(!e.is_empty());
     }
 
+    /// A capture of the shared vector (187 W, 84 rpm, gear 14) with what a rider typed.
+    fn capture_with(lines: &[&str]) -> (PathBuf, PathBuf) {
+        let dir = altered(&format!("cap{}", lines.concat().len()), "tables/keiser-m3i.yaml", "version: 1", "version: 1");
+        let path = dir.join("tables/keiser-m3i.rider.capture.jsonl");
+        let packet = |t: u64| format!(r#"{{"type":"packet","t":{t},"kind":"adv","name":"M3","mfr":"020106300007480 38c05bb002a000c2233800e"}}"#).replace(' ', "");
+        let mut text = String::from(r#"{"type":"header","format":"ofp-capture","version":1,"tool":"test","host":"test","started":"2026-01-01T00:00:00Z","device":{"name":"M3","company_id":"0102"}}"#);
+        text.push('\n');
+        for t in [0u64, 400, 800, 1200, 1600, 2000] {
+            text.push_str(&packet(t));
+            text.push('\n');
+        }
+        for l in lines {
+            text.push_str(l);
+            text.push('\n');
+        }
+        std::fs::write(&path, text).unwrap();
+        (dir, path)
+    }
+
+    #[test]
+    fn a_riders_notes_and_confirmations_are_held_to() {
+        // what the console showed, read by a person: close enough passes
+        let (dir, _) = capture_with(&[
+            r#"{"type":"note","t":2100,"text":"power=190 cadence=83 bike=7","values":{"power":190,"cadence":83,"bike":7}}"#,
+            r#"{"type":"confirm","t":2200,"source_id":"keiser-m3i:7","field":"gear","shown":14,"ok":true}"#,
+        ]);
+        assert_eq!(problems(&dir), Vec::<String>::new());
+
+        // a note far from what the table decodes fails
+        let (dir, _) = capture_with(&[r#"{"type":"note","t":2100,"text":"power=250","values":{"power":250}}"#]);
+        let e = problems(&dir);
+        assert!(e.iter().any(|e| e.contains("noted power=250") && e.contains("decodes 187")), "{e:#?}");
+
+        // a value the rider marked wrong fails until the table decodes what the console showed
+        let (dir, _) = capture_with(&[r#"{"type":"confirm","t":2200,"source_id":"keiser-m3i:7","field":"power","shown":187,"console":230,"ok":false}"#]);
+        let e = problems(&dir);
+        assert!(e.iter().any(|e| e.contains("marked power wrong") && e.contains("console showed 230")), "{e:#?}");
+    }
+
+    #[test]
+    fn a_confirmed_value_must_keep_decoding_the_same() {
+        let (dir, _) = capture_with(&[r#"{"type":"confirm","t":2200,"source_id":"keiser-m3i:7","field":"cadence","shown":84,"ok":true}"#]);
+        assert!(run(&dir, false).errors.is_empty());
+        // someone later changes the scale
+        let table = dir.join("tables/keiser-m3i.yaml");
+        std::fs::write(&table, std::fs::read_to_string(&table).unwrap().replace("cadence: u16le[4] / 10", "cadence: u16le[4] / 5")).unwrap();
+        let e = problems(&dir);
+        assert!(e.iter().any(|e| e.contains("rider confirmed cadence=84") && e.contains("now decodes 168")), "{e:#?}");
+    }
+
     #[test]
     fn stable_fields_are_append_only() {
         // Mark power stable and accept it, then change its unit.
