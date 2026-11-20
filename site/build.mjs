@@ -90,7 +90,8 @@ function home(latest) {
     <div class="path">
       <span class="who">Developer with a fitness app?</span>
       <a class="button quiet" href="${REPO}/blob/main/docs/integrating.md">Add OFP to your app</a>
-      <span class="small">One library · open source · Apache-2.0</span>
+      <code class="install" title="Install the library">npm install @openfitnessprotocol/ofp</code>
+      <span class="small">One library for any JavaScript app · open source · Apache-2.0</span>
     </div>
   </div>
 </div>

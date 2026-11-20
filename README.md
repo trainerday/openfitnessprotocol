@@ -24,6 +24,17 @@ this project, to an AI assistant: it can set the device up for you.
 > **Status: first version.** The core, the `ofp` command and one device (the Keiser M3i) work.
 > Everything can still change until 1.0. The details are in the [design document](docs/design.md).
 
+
+### Use it in your app
+
+```sh
+npm install @openfitnessprotocol/ofp
+```
+
+One library for any JavaScript app (Electron, Node, React Native, the web): the core, the device tables,
+and four hooks to wire to your app's own Bluetooth. Details on the
+[package page](https://www.npmjs.com/package/@openfitnessprotocol/ofp) and in
+[docs/integrating.md](docs/integrating.md).
 ---
 
 ## The problem
