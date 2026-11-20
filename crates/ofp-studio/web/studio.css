@@ -195,3 +195,8 @@ body:not(.simple) #my-recordings { display: none; }
 .rec-what { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .rec-what b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rec-sent { color: var(--good); font-size: 14px; white-space: nowrap; }
+/* the header's right side on one line: the checkbox's default margin pushed "Advanced" down */
+.switch { line-height: 1; align-self: center; }
+.switch input { margin: 0; }
+#my-recordings { line-height: 1; padding: 0; align-self: center; }
+header .switch { margin: 0; }
