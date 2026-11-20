@@ -296,8 +296,8 @@ the broadcast kind is wired in so far.
 but **read only**: OFP does not set their resistance or ERG mode. Your app keeps controlling them the way it
 does now, so there is usually little reason to read them through OFP.
 
-**Not verified yet** (written from published specifications or other projects' findings, waiting for an
-owner to check them in OFP Studio):
+**Supported, not yet verified** (OFP reads them, from published specifications or other projects'
+findings; no owner has checked one in OFP Studio yet):
 
 | Device | What OFP reads |
 |---|---|

@@ -160,7 +160,8 @@ function home(latest) {
         <li><b>Treadmills with FTMS</b></li>
       </ul>
     </div>
-    <div class="card"><h3>Not verified yet</h3>
+    <div class="card"><h3>Supported, not yet verified</h3>
+      <p class="small">OFP reads them; no owner has checked one yet.</p>
       <ul>
         <li>Running speed and cadence sensors</li>
         <li>CORE body temperature sensor</li>
