@@ -150,7 +150,7 @@ function home(latest) {
   <div class="cards devices">
     <div class="card yes"><h3><span class="mark-yes" aria-hidden="true">✓</span> Verified</h3>
       <ul>
-        <li><b>Heart rate straps</b> (Bluetooth standard)</li>
+        <li><b>Heart rate straps</b> (Garmin, Polar and others): heart rate and RR intervals for HRV</li>
         <li><b>Power meters</b>: power, cadence</li>
         <li><b>Speed and cadence sensors</b></li>
         <li><b>Spin bikes and indoor bikes</b> with the Bluetooth fitness machine standard (FTMS): Schwinn IC4 / Bowflex C6, Stages, newer Yesoul and Domyos, and many more</li>

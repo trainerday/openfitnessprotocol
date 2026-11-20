@@ -1,7 +1,7 @@
 id: std-heart-rate
 name: Heart Rate
 reader: notify
-version: 1
+version: 2
 status: draft
 provenance: >
   The Bluetooth Heart Rate Service and its Heart Rate Measurement characteristic (0x2A37), as the
@@ -18,10 +18,19 @@ notify:
   characteristic: "2a37"
   min_length: 2
 
-# 0     flags: bit 0 = the heart rate is 16 bits (else 8)
-# 1     heart rate, beats per minute (1 or 2 bytes)
-# then optional energy expended and RR intervals, not read here
+# 0     flags: bit 0 the heart rate is 16 bits (else 8); bit 3 energy expended present; bit 4 RR present
+# then  heart rate (1 or 2 bytes), energy expended (2 bytes, not read), and the RR intervals to the end
+#       of the packet, 1/1024 s each: none, one or several per packet.
 stale_after_ms: 5000
 
+layout:
+  start: 1
+  parts:
+    - { name: hr8, type: u8, when: "!(u8[0] & 1)" }
+    - { name: hr16, type: u16le, when: "u8[0] & 1" }
+    - { name: energy, type: skip2, when: "u8[0] & 8" }
+    - { name: rr, type: u16le, when: "u8[0] & 16", repeat: true }
+
 fields:
-  heart_rate: "u8[0] & 1 ? u16le[1] : u8[1]"
+  heart_rate: "u8[0] & 1 ? hr16 : hr8"
+  rr_interval: rr * 1000 / 1024

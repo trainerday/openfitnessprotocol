@@ -858,13 +858,26 @@ function renderTiles() {
     const mode = displayMode(t.f.key);
     tile.classList.toggle('silent', !!t.stale);
     const show = tile.querySelector('.show');
-    if (mode === 'dial') show.replaceChildren(dial(t.value, t.f));
+    // a list (RR intervals): the latest value, and how many came in the last packet
+    const list = Array.isArray(t.value) ? t.value : null;
+    const value = list ? list[list.length - 1] : t.value;
+    if (list) tile.classList.add('list');
+    if (mode === 'dial') show.replaceChildren(dial(value, t.f));
     else {
-      const none = t.value === undefined;
-      const text = none ? 'nothing reported yet' : fmt(t.value, t.f) + (mode === 'text' && t.f.unit ? ' ' + t.f.unit : '');
+      const none = value === undefined;
+      const text = none ? 'nothing reported yet' : fmt(value, t.f) + (mode === 'text' && t.f.unit ? ' ' + t.f.unit : '') + (list && list.length > 1 ? `  (${list.length} in the last packet)` : '');
       const cls = 'value' + (none ? ' none' : mode === 'text' ? ' text' : '');
       if (!show.firstChild || show.firstChild.className !== cls) show.replaceChildren(h('div', { class: cls }, text));
       else if (show.firstChild.textContent !== text) show.firstChild.textContent = text;
+    }
+    // a list is not something a display shows as one number: no right / wrong for it
+    if (t.f.type === 'list') {
+      const el = tile.querySelector('.verdict');
+      const text = 'one value per beat';
+      if (el.textContent !== text) { el.textContent = text; el.className = 'verdict muted'; }
+      const answer = tile.querySelector('.row.answer');
+      if (answer) answer.hidden = true;
+      continue;
     }
     const v = verdictOf(t);
     const el = tile.querySelector('.verdict');

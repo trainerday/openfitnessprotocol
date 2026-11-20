@@ -121,8 +121,8 @@ for any device or any contributor (`SECURITY.md`, "The boundary"):
   control point (FTMS, Cycling Power, Speed and Cadence, Wahoo, Tacx, Elite), at most 16 frames of 64
   bytes. **No locks**: nothing that answers a challenge, unlocks, pairs with a secret or decrypts. A device
   that needs one stays out (decided 2026-11-20: Echelon, Kinetic and Peloton are not added).
-- **No unbounded work**: the arithmetic is capped in depth and size, a layout has at most 32 parts, and
-  the check refuses a table that goes past the cap.
+- **No unbounded work**: the arithmetic is capped in depth and size, a layout has at most 32 parts, a
+  repeating part at most 16 elements, and the check refuses a table that goes past the cap.
 - **Nothing kept but a counter**: a `rate` remembers the last count and event time of its own counter,
   for its own source. Nothing else carries from one packet to the next.
 

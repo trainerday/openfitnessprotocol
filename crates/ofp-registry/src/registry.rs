@@ -75,6 +75,9 @@ struct PartSrc {
     ty: PartType,
     #[serde(default)]
     when: Option<String>,
+    /// The last part only: repeats to the end of the packet (a list field reads it).
+    #[serde(default)]
+    repeat: bool,
 }
 
 /// `start:` / `poll:` — fixed bytes to write so the device sends its data.
@@ -452,7 +455,7 @@ pub fn compile_table(text: &str, shown: &str, stem: Option<&str>, known: &BTreeS
                     errors.push(format!("{shown}: layout part '{}': names are lower case letters, digits and _, not rate or wheel, and each used once", p.name));
                 }
                 let present_when = p.when.as_deref().and_then(|w| expr(&format!("layout part '{}' when", p.name), w, errors));
-                LayoutPart { name: p.name.clone(), ty: p.ty, present_when }
+                LayoutPart { name: p.name.clone(), ty: p.ty, present_when, repeat: p.repeat }
             })
             .collect();
         Layout { start: l.start, parts }

@@ -52,8 +52,9 @@ export interface OfpBasic {
 export interface OfpValues {
   id: string
   t: number
-  /** Field key → value: every field the device sends, described in `OfpDevice.fields`. */
-  fields: Record<string, number>
+  /** Field key → value: every field the device sends, described in `OfpDevice.fields`. A field of type
+   *  `list` (RR intervals) is an array, sent once with its packet and never repeated. */
+  fields: Record<string, number | number[]>
   /** The four values every training app has a place for (0 when the device has none). */
   basic: OfpBasic
   /** True for the zeros sent when the device went silent. */

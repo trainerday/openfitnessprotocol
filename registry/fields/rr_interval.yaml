@@ -1,0 +1,14 @@
+id: 21
+key: rr_interval
+name: RR interval
+unit: ms
+type: list
+decimals: 1
+min: 200
+max: 3000
+kind: instantaneous
+tier: experimental
+tolerance: { abs: 5, pct: 0 }
+description: >
+  The time between heartbeats, one value per beat since the last packet (the input of heart rate
+  variability, HRV). A list: each packet brings the beats it saw, once; it is never repeated.

@@ -60,6 +60,9 @@ example that matches this app's Bluetooth library (examples/…/ofpDevices.js), 
    `start` (write once, in order, after subscribing), and the `write` hook asks for a poll now and then
    (call `tick()` about every 200 ms while such a device is in use). An app that does not wire `write`
    still reads every other device.
+
+   A field can be a **list** (`type: list` in its description): RR intervals from a heart rate strap come
+   as an array, one value per beat, sent once with the packet that carried them and never repeated.
 4. Find out when this app stops scanning, and keep the scan running while `ofp.scanNeed()` says so.
 5. Tell me what an OFP device has to look like for this app's device list and screens, before
    writing a stand-in for it.

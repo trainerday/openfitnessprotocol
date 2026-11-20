@@ -608,6 +608,61 @@ mod tests {
     }
 
     #[test]
+    fn heart_rate_straps_send_rr_intervals_once_each() {
+        use ofp_core::{Advertisement, Core, Message, Settings};
+        let reg = registry::load(&registry_dir()).unwrap();
+        let mut core = Core::from_bundle(reg.bundle.clone()).unwrap();
+        *core.settings_mut() = Settings { repeat_ms: 1000, ..Default::default() };
+        let services = vec![String::from("180d")];
+        core.on_advertisement(&Advertisement { device_id: "strap", name: Some("HRM-Pro"), rssi: Some(-50), manufacturer_data: &[], services: &services, now_ms: 0 });
+        core.use_source("std-heart-rate:strap", 0).unwrap();
+        core.on_connected("strap", 0);
+        let packet = |hex: &str, t: u64, core: &mut Core| -> serde_json::Map<String, serde_json::Value> {
+            let bytes = ofp_capture::unhex(hex).unwrap();
+            match core.on_notification("strap", "2a37", &bytes, t).into_iter().next() {
+                Some(Message::Values { fields, .. }) => fields.into_iter().collect(),
+                _ => serde_json::Map::new(),
+            }
+        };
+        // 8-bit heart rate 72, no RR
+        let v = packet("00 48", 1000, &mut core);
+        assert_eq!(v["heart_rate"], 72.0);
+        assert!(!v.contains_key("rr_interval"));
+        // RR present (bit 4): one value, 832/1024 s = 812.5 ms
+        let v = packet("10 48 4003", 2000, &mut core);
+        assert_eq!(v["rr_interval"], serde_json::json!([812.5]));
+        // energy (bit 3) before three RR values: 16-bit heart rate 150 (bit 0)
+        let v = packet("19 9600 2c01 9001 a401 b801", 3000, &mut core);
+        assert_eq!(v["heart_rate"], 150.0);
+        assert_eq!(v["rr_interval"], serde_json::json!([390.6, 410.2, 429.7]));
+        // a repeat of the standing values brings the heart rate again, never the RR
+        let repeats: Vec<_> = core.tick(4500).into_iter().filter_map(|m| match m { Message::Values { repeat: true, fields, .. } => Some(fields), _ => None }).collect();
+        assert!(!repeats.is_empty() && repeats.iter().all(|f| f.contains_key("heart_rate") && !f.contains_key("rr_interval")), "{repeats:?}");
+        // gone silent: zeros for the heart rate, no list
+        let zeros: Vec<_> = core.tick(20_000).into_iter().filter_map(|m| match m { Message::Values { stale: true, fields, .. } => Some(fields), _ => None }).collect();
+        assert!(zeros.iter().all(|f| !f.contains_key("rr_interval")));
+        // 17 values: at most 16 are taken
+        let many = format!("10 48 {}", "0004 ".repeat(17));
+        assert_eq!(packet(&many, 21_000, &mut core)["rr_interval"].as_array().unwrap().len(), 16);
+    }
+
+    #[test]
+    fn a_repeating_part_must_be_last_and_read_by_a_list_field() {
+        let dir = altered("lists", "tables/keiser-m3i.yaml", "reader: broadcast", "reader: broadcast");
+        let base = "id: x\nname: X\nreader: notify\nversion: 1\nstatus: draft\nprovenance: test\nverified_on: [test]\nmatch:\n  - name_prefix: X\nnotify:\n  service: fff0\n  characteristic: fff4\nstale_after_ms: 5000\n";
+        for (rest, ok) in [
+            ("layout:\n  start: 1\n  parts:\n    - { name: hr, type: u8 }\n    - { name: rr, type: u16le, repeat: true }\nfields:\n  heart_rate: hr\n  rr_interval: rr\n", true),
+            ("layout:\n  start: 1\n  parts:\n    - { name: rr, type: u16le, repeat: true }\n    - { name: hr, type: u8 }\nfields:\n  heart_rate: hr\n  rr_interval: rr\n", false),
+            ("layout:\n  start: 1\n  parts:\n    - { name: rr, type: u16le, repeat: true }\nfields:\n  heart_rate: rr\n", false),
+            ("fields:\n  rr_interval: u16le[1]\n", false),
+        ] {
+            std::fs::write(dir.join("tables/x.yaml"), format!("{base}{rest}")).unwrap();
+            let errors = run(&dir, false).errors;
+            assert_eq!(errors.is_empty(), ok, "{rest}: {errors:?}");
+        }
+    }
+
+    #[test]
     fn the_tymewear_draft_decodes_a_breath_and_skips_the_other_packets() {
         let reg = registry::load(&registry_dir()).unwrap();
         // a breath: inhale 1.50 s, exhale 2.50 s, raw tidal volume 180 → 15 breaths/min, 1.80 L, 27 L/min

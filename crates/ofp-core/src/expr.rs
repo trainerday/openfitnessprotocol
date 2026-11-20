@@ -114,10 +114,12 @@ pub struct Cx<'a> {
     pub parts: &'a [(PartType, Option<usize>)],
     pub rate: Option<f64>,
     pub wheel_m: Option<f64>,
+    /// The repeating part's index, and which of its elements is read (for a list field).
+    pub repeat: Option<(usize, usize)>,
 }
 
 impl Cx<'_> {
-    pub const NONE: Cx<'static> = Cx { parts: &[], rate: None, wheel_m: None };
+    pub const NONE: Cx<'static> = Cx { parts: &[], rate: None, wheel_m: None, repeat: None };
 }
 
 fn bytes<const N: usize>(p: &[u8], at: usize) -> Option<[u8; N]> {
@@ -149,7 +151,11 @@ impl Expr {
             Expr::U32le(at) => u32::from_le_bytes(bytes(p, *at)?) as f64,
             Expr::Part(i) => {
                 let (ty, at) = cx.parts.get(*i)?;
-                ty.read(p, (*at)?)?
+                let element = match cx.repeat {
+                    Some((r, k)) if r == *i => k,
+                    _ => 0,
+                };
+                ty.read(p, (*at)? + element * ty.width())?
             }
             Expr::Rate => cx.rate?,
             Expr::Wheel => cx.wheel_m?,

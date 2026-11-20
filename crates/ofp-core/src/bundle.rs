@@ -17,7 +17,13 @@ pub struct Bundle {
 pub enum FieldType {
     Int,
     Decimal,
+    /// Several numbers from one packet (RR intervals): an array, sent once with its packet, never kept
+    /// or repeated as a standing value.
+    List,
 }
+
+/// At most this many elements in a repeating layout part (a list field).
+pub const MAX_LIST: usize = 16;
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -139,6 +145,9 @@ pub struct LayoutPart {
     /// Always there when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub present_when: Option<Expr>,
+    /// The last part may repeat to the end of the packet (at most `MAX_LIST` times): a list field reads it.
+    #[serde(default, skip_serializing_if = "core::ops::Not::not")]
+    pub repeat: bool,
 }
 
 /// A value that is the speed of a running counter: revolutions, strokes, steps. Kept between packets

@@ -1,6 +1,6 @@
 //! The broadcast reader and the table engine.
 
-use crate::bundle::{Bundle, FieldDef, FieldType, MatchRule, RateSpec, SampleKind, Table, Tier, CONTROL_POINTS, MAX_FRAME_BYTES, MAX_LAYOUT_PARTS, MAX_WRITE_FRAMES, MIN_POLL_MS};
+use crate::bundle::{Bundle, FieldDef, FieldType, MatchRule, RateSpec, SampleKind, Table, Tier, CONTROL_POINTS, MAX_FRAME_BYTES, MAX_LAYOUT_PARTS, MAX_LIST, MAX_WRITE_FRAMES, MIN_POLL_MS};
 use crate::expr::{Cx, Expr, PartType};
 use crate::BUNDLE_VERSION;
 use alloc::collections::BTreeMap;
@@ -287,6 +287,15 @@ impl Core {
                 }
             }
             check_layout_and_rates(t)?;
+            // a list field reads the repeating part, and only a list field does
+            let repeating = t.layout.as_ref().and_then(|l| l.parts.iter().position(|p| p.repeat));
+            for f in &t.fields {
+                let reads_repeat = repeating.is_some() && f.value.uses().0 == repeating;
+                let is_list = bundle.field(&f.field).is_some_and(|d| d.ty == FieldType::List);
+                if reads_repeat != is_list {
+                    return Err(format!("table {}: field {}: a list field reads the repeating part, and only a list field does", t.id, f.field));
+                }
+            }
         }
         Ok(Core { bundle, sources: BTreeMap::new(), settings: Settings::default() })
     }
@@ -408,7 +417,8 @@ impl Core {
             let (fields, out_of_range) = decode(&self.bundle, table, data, &mut s.rates, now_ms, &self.settings);
             s.last_ms = now_ms;
             s.stale = false;
-            for (k, v) in &fields {
+            // a list (RR intervals) goes out once, with its packet: it is not a standing value
+            for (k, v) in fields.iter().filter(|(_, v)| !v.is_array()) {
                 s.values.insert(k.clone(), v.clone());
             }
             for k in &out_of_range {
@@ -569,7 +579,7 @@ impl Core {
             let Some(s) = self.sources.get_mut(&source_id) else { return };
             let (fields, out_of_range) = decode(&self.bundle, table, payload, &mut s.rates, adv.now_ms, &self.settings);
             {
-                for (k, v) in &fields {
+                for (k, v) in fields.iter().filter(|(_, v)| !v.is_array()) {
                     s.values.insert(k.clone(), v.clone());
                 }
                 for k in &out_of_range {
@@ -671,6 +681,18 @@ fn check_layout_and_rates(t: &Table) -> Result<(), String> {
             return Err(format!("table {}: poll every_ms must be at least {MIN_POLL_MS}", t.id));
         }
     }
+    let repeating = t.layout.as_ref().and_then(|l| l.parts.iter().position(|p| p.repeat));
+    if let (Some(r), Some(l)) = (repeating, &t.layout) {
+        if r + 1 != l.parts.len() {
+            return Err(format!("table {}: only the last layout part may repeat", t.id));
+        }
+    }
+    for f in &t.fields {
+        let reads_repeat = repeating.is_some() && f.value.uses().0 == repeating;
+        if reads_repeat && f.rate.is_some() {
+            return Err(format!("table {}: field {}: a rate cannot read a repeating part", t.id, f.field));
+        }
+    }
     if let Some(l) = &t.layout {
         for p in &l.parts {
             // where a part sits cannot depend on other parts: flags are read at fixed positions
@@ -700,6 +722,18 @@ fn check_layout_and_rates(t: &Table) -> Result<(), String> {
 }
 
 /// Where each part of a table's layout sits in this packet (`None`: not in it).
+/// The repeating part (the last one, when it repeats): its index and how many whole elements this packet has.
+fn repeat_count(table: &Table, parts: &[(PartType, Option<usize>)], payload: &[u8]) -> Option<(usize, usize)> {
+    let layout = table.layout.as_ref()?;
+    let last = layout.parts.len().checked_sub(1)?;
+    if !layout.parts[last].repeat {
+        return None;
+    }
+    let (ty, at) = parts.get(last)?;
+    let count = at.map_or(0, |at| payload.len().saturating_sub(at) / ty.width()).min(MAX_LIST);
+    Some((last, count))
+}
+
 fn place_parts(table: &Table, payload: &[u8]) -> Vec<(PartType, Option<usize>)> {
     let Some(layout) = &table.layout else { return Vec::new() };
     let mut at = layout.start;
@@ -755,9 +789,32 @@ fn decode(bundle: &Bundle, table: &Table, payload: &[u8], rates: &mut [RateState
     let mut fields = BTreeMap::new();
     let mut out_of_range = Vec::new();
     let parts = place_parts(table, payload);
+    let repeat = repeat_count(table, &parts, payload);
     let wheel_m = Some(settings.wheel_circumference_mm as f64 / 1000.0);
     for (i, tf) in table.fields.iter().enumerate() {
-        let mut cx = Cx { parts: &parts, rate: None, wheel_m };
+        // a list: the field's expression once per element of the repeating part
+        if let (Some(def), Some((r, count))) = (bundle.field(&tf.field), repeat) {
+            if def.ty == FieldType::List {
+                let mut list = Vec::new();
+                for k in 0..count {
+                    let cx = Cx { parts: &parts, rate: None, wheel_m, repeat: Some((r, k)) };
+                    if tf.only_when.as_ref().is_some_and(|w| w.eval_in(payload, &cx).unwrap_or(0.0) == 0.0) {
+                        continue;
+                    }
+                    if let Some(v) = tf.value.eval_in(payload, &cx) {
+                        let v = round_to(v, def.decimals);
+                        if !v.is_nan() && v >= def.min && v <= def.max {
+                            list.push(to_json(v, def));
+                        }
+                    }
+                }
+                if !list.is_empty() {
+                    fields.insert(tf.field.clone(), Value::Array(list));
+                }
+                continue;
+            }
+        }
+        let mut cx = Cx { parts: &parts, rate: None, wheel_m, repeat: None };
         if let (Some(spec), Some(st)) = (&tf.rate, rates.get_mut(i)) {
             cx.rate = advance_rate(spec, st, payload, &cx, now_ms);
             if cx.rate.is_none() {
@@ -785,7 +842,7 @@ fn zeros(bundle: &Bundle, table: &Table) -> BTreeMap<String, Value> {
     let mut fields = BTreeMap::new();
     for tf in &table.fields {
         if let Some(def) = bundle.field(&tf.field) {
-            if def.kind == SampleKind::Instantaneous {
+            if def.kind == SampleKind::Instantaneous && def.ty != FieldType::List {
                 fields.insert(tf.field.clone(), to_json(0.0, def));
             }
         }

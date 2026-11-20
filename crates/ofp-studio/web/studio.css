@@ -209,3 +209,5 @@ button.copy:hover { color: var(--accent); }
 button.copy.done { color: var(--good); border-color: var(--good); }
 .rec-sent button.copy { width: 24px; height: 24px; margin-left: 6px; border-radius: 6px; }
 .rec-sent button.copy svg { width: 13px; height: 13px; }
+.tile.list .value { font-size: inherit; }
+.simple .tile.list .value { font-size: 34px; }
