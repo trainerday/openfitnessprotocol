@@ -3,6 +3,12 @@
 **One open way for any fitness device to talk to any fitness app — with rules that live in a git
 repo, not in a committee.**
 
+### Test your device now: no code needed
+
+**[Download OFP Studio](https://openfitnessprotocol.org/download)**, a free app for Mac and Windows. Wake your
+device, click **Use**, and see what it sends. If nothing reads it yet, save the recording and give it, with
+this project, to an AI assistant: it can set the device up for you.
+
 > **Status: first version.** The core, the `ofp` command and one device (the Keiser M3i) work.
 > Everything can still change until 1.0. The details are in the [design document](docs/design.md).
 
