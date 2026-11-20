@@ -212,7 +212,7 @@ function viewDevices() {
   const wrap = h('div', {});
   wrap.append(h('div', { class: 'panel' },
     h('h2', {}, 'Devices in range'),
-    h('p', { class: 'hint' }, 'Everything the radio hears. Wake your device (pedal, press a button) and it shows up within a few seconds.'),
+    h('p', { class: 'hint' }, 'Devices something can read are listed with what reads them: a standard Bluetooth profile, or an OFP table. Wake your device (pedal, press a button) and it shows up within a few seconds. Click Use and you see its values.'),
     h('div', { class: 'scroll' }, h('table', { id: 'devices-table' })),
   ));
   const caps = h('div', { class: 'panel' }, h('h2', {}, 'Earlier recordings'), h('p', { class: 'hint' }, 'Every time you use a device it is recorded into its own file. Open one to look at it again, or to send it to someone.'));
@@ -240,6 +240,18 @@ function viewDevices() {
 /** Silent this long: the row is dimmed and cannot be chosen (the server drops it after a minute). */
 const DEVICE_QUIET_S = 20;
 const deviceRows = new Map(); // device id → its row: rows are updated in place, never rebuilt, so nothing blinks
+let showOthers = false;
+
+/** The standard Bluetooth profiles for fitness devices: a device advertising one can be read with no table. */
+const STANDARD_SERVICES = { '1826': 'FTMS', '1818': 'Cycling Power', '1816': 'Speed and Cadence', '180d': 'Heart Rate', '1814': 'Running Speed and Cadence', '1809': 'Thermometer' };
+
+/** What reads this device: an OFP table, standard profiles, or nothing yet. */
+function readsAs(d) {
+  const by = [];
+  if (d.known) by.push(d.known);
+  for (const u of d.services) if (STANDARD_SERVICES[u]) by.push(STANDARD_SERVICES[u]);
+  return by;
+}
 
 function renderDevicesTable() {
   const t = $('#devices-table');
@@ -248,23 +260,24 @@ function renderDevicesTable() {
   if (!t.tHead) {
     deviceRows.clear();
     t.replaceChildren();
-    t.createTHead().append(h('tr', {}, h('th', {}, 'Name'), h('th', {}, 'Sends'), h('th', { class: 'num' }, 'Heard / min'), h('th', { class: 'num' }, 'Longest gap'), h('th', { class: 'num' }, 'Signal'), h('th', {}, '')));
-    t.createTBody();
+    t.createTHead().append(h('tr', {}, h('th', {}, 'Device'), h('th', {}, 'Read as'), h('th', { class: 'num' }, 'Heard / min'), h('th', { class: 'num' }, 'Longest gap'), h('th', { class: 'num' }, 'Signal'), h('th', {}, '')));
+    // two bodies: what can be read, and everything else nearby (folded away until asked for)
+    t.append(h('tbody', { id: 'devices-readable' }), h('tbody', { id: 'devices-toggle' }, h('tr', {}, h('td', { colspan: 6 },
+      h('button', { class: 'small ghost', id: 'others-button', onclick: () => { showOthers = !showOthers; renderDevicesTable(); } })))), h('tbody', { id: 'devices-others' }));
   }
-  const body = t.tBodies[0];
-  let empty = $('#devices-empty');
-  if (!S.devices.length) {
-    if (!empty) body.append(h('tr', { id: 'devices-empty' }, h('td', { colspan: 6, class: 'empty' })));
-    $('#devices-empty td').textContent = S.radio.startsWith('error') ? S.radio.slice(7) : S.radio === 'off' ? 'This build has no Bluetooth: open a capture below.' : 'Listening…';
-  } else if (empty) empty.remove();
-
+  const readable = $('#devices-readable'), others = $('#devices-others');
   const seen = new Set();
-  let previous = null;
+  const last = { readable: null, others: null };
+  let otherCount = 0, readableCount = 0;
   for (const d of S.devices) {
     seen.add(d.device_id);
+    const by = readsAs(d);
+    // the chosen device stays on top whatever it is
+    const group = by.length || d.device_id === cur ? 'readable' : 'others';
+    if (group === 'others') otherCount++; else readableCount++;
+    const body = group === 'readable' ? readable : others;
     let row = deviceRows.get(d.device_id);
     if (!row) {
-      // The chosen device keeps its button: "Open" goes back to it without starting over
       // One click: choose it, start recording, show its values. (Whether it has to be connected to is
       // worked out from what it advertises.)
       const use = h('button', { class: 'small primary', onclick: guard(async () => {
@@ -275,39 +288,48 @@ function renderDevicesTable() {
         }
         setTab('live');
       }) }, 'Use');
-      row = h('tr', {}, h('td', {}), h('td', { class: 'muted' }), h('td', { class: 'num' }), h('td', { class: 'num' }), h('td', { class: 'num' }), h('td', {}, use, h('span', { class: 'badge', hidden: true }, 'chosen')));
+      row = h('tr', {}, h('td', {}), h('td', {}), h('td', { class: 'num' }), h('td', { class: 'num' }), h('td', { class: 'num' }), h('td', {}, use, h('span', { class: 'badge', hidden: true }, 'chosen')));
       deviceRows.set(d.device_id, row);
     }
-    // keep the server's order without moving rows that are already in place
-    const want = previous ? previous.nextSibling : body.firstChild;
+    // keep the order within each group without moving rows that are already in place
+    const want = last[group] ? last[group].nextSibling : body.firstChild;
     if (want !== row) body.insertBefore(row, want);
-    previous = row;
+    last[group] = row;
 
     const quiet = d.silent_s > DEVICE_QUIET_S;
-    const sends = [];
-    if (d.companies.length) sends.push('data in adverts (company ' + d.companies.map((c) => '0x' + c).join(', ') + ')');
-    if (d.services.length) sends.push('services ' + d.services.map((u) => (u.length > 8 ? u.slice(0, 8) + '…' : u)).join(' '));
     const set = (cell, text) => { if (cell.textContent !== text) cell.textContent = text; };
-    const name = (d.name || '(no name)') + (d.known ? '  ·  ' + d.known : '');
-    row.cells[0].title = d.known ? 'A table in the registry reads this device' : '';
-    set(row.cells[0], name);
+    set(row.cells[0], d.name || '(no name)');
     row.cells[0].className = d.name ? '' : 'muted';
-    set(row.cells[1], sends.join(' · ') || '–');
+    const sends = [];
+    if (d.companies.length) sends.push('sends data in its adverts (maker ' + d.companies.map((c) => '0x' + c).join(', ') + ')');
+    if (d.services.length) sends.push('services ' + d.services.map((u) => (u.length > 8 ? u.slice(0, 8) + '…' : u)).join(' '));
+    set(row.cells[1], by.length ? by.join(' · ') : 'nothing reads it yet' + (sends.length ? ': ' + sends.join(' · ') : ''));
+    row.cells[1].className = by.length ? '' : 'muted';
     set(row.cells[2], String(d.per_min));
     set(row.cells[3], d.longest_gap_s + ' s');
     set(row.cells[4], quiet ? `silent ${d.silent_s} s` : d.rssi == null ? '–' : String(d.rssi));
     row.style.opacity = quiet ? '.45' : '';
     const [use, chosen] = row.cells[5].children;
     const isCur = d.device_id === cur;
-    use.hidden = false;
     set(use, isCur ? 'Open' : 'Use');
     use.disabled = quiet && !isCur;
     use.title = quiet ? 'Not heard for a while: wake the device' : '';
-    chosen.hidden = d.device_id !== cur;
+    chosen.hidden = !isCur;
   }
   for (const [id, row] of deviceRows) {
     if (!seen.has(id)) { row.remove(); deviceRows.delete(id); }
   }
+  others.hidden = !showOthers;
+  const button = $('#others-button');
+  const label = !otherCount ? '' : showOthers ? `Hide the ${otherCount} other things nearby` : `Show ${otherCount} other things nearby (nothing reads them yet: a new device to add would be here)`;
+  if (button.textContent !== label) button.textContent = label;
+  $('#devices-toggle').hidden = !otherCount;
+  let empty = $('#devices-empty');
+  if (!readableCount) {
+    if (!empty) { empty = h('tr', { id: 'devices-empty' }, h('td', { colspan: 6, class: 'empty' })); readable.append(empty); }
+    const text = S.radio.startsWith('error') ? S.radio.slice(7) : S.radio === 'off' ? 'This build has no Bluetooth: open a recording below.' : 'Listening… wake your device (pedal, press a button, put the strap on).';
+    if (empty.firstChild.textContent !== text) empty.firstChild.textContent = text;
+  } else if (empty) empty.remove();
 }
 
 // ───────────────────────── byte grid ─────────────────────────
