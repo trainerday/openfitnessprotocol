@@ -1108,16 +1108,24 @@ const SUBMIT = new URLSearchParams(location.search).get('submit') || 'https://op
 /** In the simple Studio: the device list ('connect') or the device being read ('check'). Going to the list
  *  does not disconnect: the device keeps recording until another one is connected. */
 let simpleView = 'check';
+/** The device a Connect click is waiting for (its button shows a spinner until the answer). */
+let connectingId = null;
 
 const connect = guard(async (d, button) => {
   S.sent = null;
   simpleView = 'check';
+  connectingId = d.device_id;
   if (button) { button.disabled = true; button.classList.add('busy'); button.textContent = 'Connecting…'; }
-  if (!(session() && session().device_id === d.device_id)) {
-    await api('/api/session', { device_id: d.device_id });
-    await api('/api/record/start', {});
-  } else if (!session().recording) {
-    await api('/api/record/start', {});
+  try {
+    if (!(session() && session().device_id === d.device_id)) {
+      await api('/api/session', { device_id: d.device_id });
+      await api('/api/record/start', {});
+    } else if (!session().recording) {
+      await api('/api/record/start', {});
+    }
+  } finally {
+    // the button is drawn again from the state below, whatever happened
+    connectingId = null;
   }
   await reload();
 });
@@ -1202,7 +1210,11 @@ function renderDeviceCards() {
     card.classList.toggle('quiet', quiet && !isCur);
     card.classList.toggle('current', isCur);
     if (isCur) set(card.children[1], 'Connected now');
-    set(card.children[2], isCur ? 'Show its numbers' : 'Connect');
+    const button = card.children[2];
+    const busy = connectingId === d.device_id;
+    button.classList.toggle('busy', busy);
+    button.disabled = busy;
+    set(button, busy ? 'Connecting…' : isCur ? 'Show its numbers' : 'Connect');
   }
   for (const [id, card] of cardEls) if (!seen.has(id)) { card.remove(); cardEls.delete(id); }
   $('#cards-maybe-wrap').hidden = !counts.maybe;
