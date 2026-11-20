@@ -219,8 +219,16 @@ export class Ofp {
   _deliver(messages) {
     for (const m of messages) {
       switch (m.type) {
+        // A device that is connected to: the app's Bluetooth makes the connection and passes the
+        // notifications in (see `connected`, `notification`, `disconnected`).
+        case 'connect':
+          this.on.connect && this.on.connect({ id: m.source_id, deviceId: m.device_id, subscribe: m.subscribe });
+          break;
+        case 'disconnect':
+          this.on.disconnect && this.on.disconnect({ id: m.source_id, deviceId: m.device_id });
+          break;
         case 'source_appeared': {
-          const d = { id: m.source_id, name: m.name, table: m.table, tableVersion: m.table_version, instance: m.instance, instanceLabel: m.instance_label, fields: m.fields };
+          const d = { id: m.source_id, name: m.name, table: m.table, tableVersion: m.table_version, instance: m.instance, instanceLabel: m.instance_label, fields: m.fields, connectable: !!m.connectable };
           this.described.set(d.id, d);
           this.on.device && this.on.device(d);
           break;
@@ -275,15 +283,33 @@ export class Ofp {
    */
   advertisement(a) {
     const data = a.manufacturerData;
-    if (!data || data.length < 2) return;
+    const services = a.services || [];
+    // nothing a table could match on
+    if ((!data || data.length < 2) && !services.length && !a.name) return;
     this._guard(() => this.core.call({
       op: 'advertisement',
       device_id: a.deviceId || '',
       name: a.name || null,
       rssi: typeof a.rssi === 'number' ? Math.round(a.rssi) : null,
-      manufacturer_data: typeof data === 'string' ? data : toHex(data),
+      manufacturer_data: !data ? '' : typeof data === 'string' ? data : toHex(data),
+      services,
       now_ms: Math.round(this.now()),
     }));
+  }
+
+  /** The app connected the device and subscribed, as `on.connect` asked. */
+  connected(deviceId) {
+    this._guard(() => this.core.call({ op: 'connected', device_id: deviceId, now_ms: Math.round(this.now()) }));
+  }
+
+  /** The connection ended, or could not be made. The device's values read zero at once. */
+  disconnected(deviceId) {
+    this._guard(() => this.core.call({ op: 'disconnected', device_id: deviceId, now_ms: Math.round(this.now()) }));
+  }
+
+  /** One notification from a characteristic `on.connect` asked for. `bytes`: Uint8Array, number[] or hex. */
+  notification(deviceId, characteristic, bytes) {
+    this._guard(() => this.core.call({ op: 'notification', device_id: deviceId, characteristic, data: typeof bytes === 'string' ? bytes : toHex(bytes), now_ms: Math.round(this.now()) }));
   }
 
   /** Hook 4: the rider picked this device. False when it has not been heard. */
@@ -318,7 +344,7 @@ export class Ofp {
     if (this.failed || !this.core) return [];
     try {
       return this.core.call({ op: 'sources', now_ms: Math.round(this.now()), heard_within_ms: heardWithinMs })
-        .map((m) => ({ id: m.source_id, name: m.name, table: m.table, tableVersion: m.table_version, instance: m.instance, instanceLabel: m.instance_label, fields: m.fields }));
+        .map((m) => ({ id: m.source_id, name: m.name, table: m.table, tableVersion: m.table_version, instance: m.instance, instanceLabel: m.instance_label, fields: m.fields, connectable: !!m.connectable }));
     } catch {
       return [];
     }

@@ -34,8 +34,17 @@ pub enum Request {
         /// Hex, company id first.
         #[serde(default)]
         manufacturer_data: String,
+        /// Service UUIDs the device advertises.
+        #[serde(default)]
+        services: Vec<String>,
         now_ms: u64,
     },
+    /// The host connected the device and subscribed, as a `connect` message asked.
+    Connected { device_id: String, now_ms: u64 },
+    /// The connection ended, or could not be made.
+    Disconnected { device_id: String, now_ms: u64 },
+    /// One notification from a subscribed characteristic. `data` in hex.
+    Notification { device_id: String, characteristic: String, data: String, now_ms: u64 },
     Tick {
         now_ms: u64,
     },
@@ -91,10 +100,16 @@ pub fn unhex(s: &str) -> Result<Vec<u8>, String> {
 pub fn call(core: &mut Core, request: &str) -> Result<Vec<Message>, String> {
     let req: Request = serde_json::from_str(request).map_err(|e| format!("request: {e}"))?;
     Ok(match req {
-        Request::Advertisement { device_id, name, rssi, manufacturer_data, now_ms } => {
+        Request::Advertisement { device_id, name, rssi, manufacturer_data, services, now_ms } => {
             let data = unhex(&manufacturer_data)?;
-            core.on_advertisement(&Advertisement { device_id: &device_id, name: name.as_deref(), rssi, manufacturer_data: &data, now_ms })
+            core.on_advertisement(&Advertisement { device_id: &device_id, name: name.as_deref(), rssi, manufacturer_data: &data, services: &services, now_ms })
         }
+        Request::Connected { device_id, now_ms } => {
+            core.on_connected(&device_id, now_ms);
+            Vec::new()
+        }
+        Request::Disconnected { device_id, now_ms } => core.on_disconnected(&device_id, now_ms),
+        Request::Notification { device_id, characteristic, data, now_ms } => core.on_notification(&device_id, &characteristic, &unhex(&data)?, now_ms),
         Request::Tick { now_ms } => core.tick(now_ms),
         Request::Configure { min_stale_ms, repeat_ms, lost_after_ms, remembered, handled_services } => {
             let settings = core.settings_mut();
@@ -116,10 +131,7 @@ pub fn call(core: &mut Core, request: &str) -> Result<Vec<Message>, String> {
             Vec::new()
         }
         Request::UseSource { source_id, now_ms } => core.use_source(&source_id, now_ms)?,
-        Request::ReleaseSource { source_id } => {
-            core.release_source(&source_id);
-            Vec::new()
-        }
+        Request::ReleaseSource { source_id } => core.release_source(&source_id),
         Request::Sources { now_ms, heard_within_ms } => core.sources(now_ms, heard_within_ms),
     })
 }

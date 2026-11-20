@@ -1,6 +1,7 @@
 # Open Fitness Protocol (OFP) — design
 
-Status: **first version built** (core, broadcast reader, one table, the `ofp` command). Everything
+Status: **first version built** (core, broadcast and notify readers, the `ofp` command and Studio, one
+verified table and three drafts). Everything
 can still change until 1.0. Parts marked *unproven* have not been prototyped; the sections marked
 *as built* describe what the code does today.
 
@@ -102,10 +103,13 @@ automated checks replay it.
 
 | Setting | Meaning |
 |---|---|
-| `id`, `name`, `version`, `status` | Identity. `id` is also the file name |
-| `reader` | `broadcast` (the only reader so far) |
+| `id`, `name`, `version` | Identity. `id` is also the file name |
+| `status` | `draft` (started without the device in hand: no recording yet, left out of the bundle apps get, tried by its owner in the Studio), `experimental`, or `stable` |
+| `reader` | `broadcast` (the values are in the advertisement) or `notify` (the device is connected to and one characteristic's notifications are read) |
 | `provenance`, `verified_on` | Where the knowledge comes from; the device and firmware it was checked on. Required |
 | `match` | A list of rules; the first that fits wins. `manufacturer_id` (the Bluetooth company id at the start of the manufacturer data), `name_prefix`, `min_length` of the payload, and an optional `when` condition. A rule with no `manufacturer_id` reads a bare payload and must give `name_prefix` |
+| `match` in a `notify` table | Says which advertising device this is: `name_prefix`, `manufacturer_id` and/or `service` (a service it advertises). Every criterion a rule gives must hold; any rule may fit |
+| `notify` | For `reader: notify`: `service`, `characteristic` and `min_length`. Positions in the expressions count from the start of the notification |
 | `only_when` | Packets where this is false are ignored |
 | `instance` | `label` and `value`: what tells two identical devices apart. It becomes part of the source id (`keiser-m3i:197`) |
 | `stale_after_ms` | After this long without a packet, instantaneous fields read as zero |
@@ -278,7 +282,23 @@ WebAssembly and native builds; requests and replies are JSON:
 | `source_in_use` | The source is now in use; `auto: true` when the core did it because the source was remembered and was heard |
 | `source_lost` | A source in use stayed silent for `lost_after_ms`. If it is remembered it is used again by itself when it is heard |
 
-Connecting, subscribing and writing are not in this version; they arrive with the notify readers.
+**Devices that are connected to** (*as built*, `reader: notify`). The core still has no Bluetooth: it
+asks, the host does.
+
+| Request | When |
+|---|---|
+| `advertisement` with `services: […]` | As before, now with the services the device advertises: that is how such a device is recognised |
+| `{"op":"connected","device_id":…,"now_ms":…}` | The host connected and subscribed, as asked |
+| `{"op":"notification","device_id":…,"characteristic":…,"data":"<hex>","now_ms":…}` | Each notification from a subscribed characteristic |
+| `{"op":"disconnected","device_id":…,"now_ms":…}` | The connection ended or could not be made: the source reads zero at once |
+
+| Message in the reply | Meaning |
+|---|---|
+| `source_appeared` with `connectable: true` | A device a notify table knows is in range. Nothing is connected until the rider picks it |
+| `connect` | Connect to `device_id` and subscribe to `subscribe: [{service, characteristic}]`. Sent when the source comes into use, and again (at most every 5 s) while it is in use, not connected, and heard |
+| `disconnect` | The source was released: the connection is not needed for it |
+
+Writing to a device is not in the core: a table cannot send a command.
 
 **What a host's radio really hears** (measured 2026-11-20, a Keiser M3i two metres from a Mac, 24
 minutes of riding, signal around -58 dBm): the computer's built-in radio delivered about 30 of the
@@ -474,6 +494,9 @@ deliberate escape hatch; write down change rules and patent terms early.
 
 ## Open questions
 
+- What a source reads when it goes silent. Today: zero for every instantaneous field. That suits
+  power and cadence; for a temperature "no value" would be truer than 0.
+- A value that needs two packets (a rate from two time stamps). A table reads one packet at a time.
 - The over-the-air form of the output (the description and value layout; today the messages exist
   only as JSON inside the host).
 - How long descriptions are split over BLE.

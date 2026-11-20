@@ -170,6 +170,9 @@ pub struct ProposeReq {
     pub provenance: Option<String>,
     #[serde(default)]
     pub verified_on: Option<String>,
+    /// The stream the table reads: `adv` (a broadcast table) or a characteristic (a notify table).
+    #[serde(default)]
+    pub stream: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -268,7 +271,7 @@ impl Studio {
                     "min": f.min, "max": f.max, "kind": f.kind, "tier": f.tier,
                     "description": r.descriptions.get(&f.key), "tolerance": r.tolerance(&f.key),
                 })).collect::<Vec<_>>(),
-                "tables": r.bundle.tables.iter().map(|t| json!({ "id": t.id, "name": t.name, "version": t.version })).collect::<Vec<_>>(),
+                "tables": r.bundle.tables.iter().map(|t| json!({ "id": t.id, "name": t.name, "version": t.version, "reader": t.reader, "draft": r.drafts.contains(&t.id) })).collect::<Vec<_>>(),
             }),
             Err(e) => json!({ "error": e, "fields": [], "tables": [] }),
         };
@@ -308,10 +311,11 @@ impl Studio {
         for (dir, place) in [(self.cfg.captures.clone(), "captures"), (self.cfg.registry.join("tables"), "registry")] {
             let Ok(entries) = std::fs::read_dir(&dir) else { continue };
             let mut files: Vec<PathBuf> = entries.filter_map(|e| e.ok().map(|e| e.path())).filter(|p| p.to_string_lossy().ends_with(".capture.jsonl")).collect();
-            files.sort();
-            files.reverse();
+            // newest first
+            files.sort_by_key(|f| std::cmp::Reverse(std::fs::metadata(f).and_then(|m| m.modified()).ok()));
             for f in files {
-                out.push(json!({ "path": f.display().to_string(), "name": f.file_name().and_then(|n| n.to_str()), "place": place }));
+                let size = std::fs::metadata(&f).map(|m| m.len()).unwrap_or(0);
+                out.push(json!({ "path": f.display().to_string(), "name": f.file_name().and_then(|n| n.to_str()), "place": place, "kb": size.div_ceil(1024) }));
             }
         }
         json!(out)
@@ -413,6 +417,18 @@ impl Studio {
         }
         if let Some(c) = connect {
             s.connect = c;
+        }
+        // Every recording is its own file: starting again after a stop begins a new one (the table
+        // being written is kept).
+        if s.file.is_some() {
+            s.lines.truncate(1);
+            if let Some(Line::Header { started, gatt, .. }) = s.lines.first_mut() {
+                *started = ofp_capture::now_iso();
+                gatt.clear();
+            }
+            s.file = None;
+            s.path = None;
+            s.t_offset = 0;
         }
         if s.file.is_none() {
             std::fs::create_dir_all(&self.cfg.captures).map_err(|e| e.to_string())?;
@@ -636,21 +652,33 @@ impl Studio {
 
 fn propose_yaml(s: &Session, req: ProposeReq) -> Reply {
     {
-        let samples = s.samples("adv");
-        if samples.is_empty() && !s.stream_keys().is_empty() {
-            return Err("This capture has no advertisements with data. Tables for devices that connect and notify need a reader the core does not have yet; recording and finding the bytes still work.".into());
-        }
+        // Which stream the table reads: the one asked for, else advertisements when there are any,
+        // else the busiest characteristic.
+        let keys = s.stream_keys();
+        let stream = req.stream.clone().filter(|k| keys.iter().any(|(x, _)| x == k)).or_else(|| keys.first().map(|(k, _)| k.clone())).unwrap_or_else(|| "adv".to_string());
+        let notify = stream != "adv";
+        let samples = s.samples(&stream);
         let name = req.name.filter(|n| !n.trim().is_empty()).unwrap_or_else(|| s.name.clone());
         let id = req.id.filter(|n| !n.trim().is_empty()).unwrap_or_else(|| slug(&name));
         let min_length = samples.iter().map(|x| x.payload.len()).min().unwrap_or(1);
         let mut y = String::new();
-        y.push_str(&format!("id: {id}\nname: {}\nreader: broadcast\nversion: 1\nstatus: experimental\n\n", yaml_text(&name)));
+        y.push_str(&format!("id: {id}\nname: {}\nreader: {}\nversion: 1\nstatus: experimental\n\n", yaml_text(&name), if notify { "notify" } else { "broadcast" }));
         y.push_str(&format!("provenance: {}\n", yaml_text(req.provenance.as_deref().filter(|p| !p.trim().is_empty()).unwrap_or("My own capture, compared with the device's own display."))));
         y.push_str(&format!("verified_on:\n  - {}\n\n", yaml_text(req.verified_on.as_deref().filter(|p| !p.trim().is_empty()).unwrap_or(&name))));
-        y.push_str("# Positions count from the start of the payload, after the 2-byte company id.\nmatch:\n");
-        match s.company_id() {
-            Some(c) => y.push_str(&format!("  - manufacturer_id: 0x{c}\n    min_length: {min_length}\n")),
-            None => y.push_str(&format!("  - name_prefix: {}\n    min_length: {min_length}\n", yaml_text(&s.name))),
+        if notify {
+            // the service the characteristic belongs to, as found after connecting
+            let service = match s.lines.first() {
+                Some(Line::Header { gatt, .. }) => gatt.iter().find(|g| g.characteristics.iter().any(|c| c.uuid == stream)).map(|g| g.uuid.clone()),
+                _ => None,
+            }
+            .unwrap_or_else(|| "FILL-IN-THE-SERVICE".to_string());
+            y.push_str(&format!("# The device is connected to; this table reads one characteristic's notifications.\nmatch:\n  - name_prefix: {}\n\nnotify:\n  service: {}\n  characteristic: {}\n  min_length: {min_length}\n", yaml_text(&s.name), yaml_text(&service), yaml_text(&stream)));
+        } else {
+            y.push_str("# Positions count from the start of the payload, after the 2-byte company id.\nmatch:\n");
+            match s.company_id() {
+                Some(c) => y.push_str(&format!("  - manufacturer_id: 0x{c}\n    min_length: {min_length}\n")),
+                None => y.push_str(&format!("  - name_prefix: {}\n    min_length: {min_length}\n", yaml_text(&s.name))),
+            }
         }
         if let Some(w) = req.only_when.as_deref().filter(|w| !w.trim().is_empty()) {
             y.push_str(&format!("\nonly_when: {}\n", yaml_text(w)));
@@ -684,6 +712,7 @@ impl Studio {
         let mut st = self.state.lock().unwrap();
         let s = st.session.as_mut().ok_or("Choose a device or open a capture first.")?;
         let table = draft.bundle.tables[0].clone();
+        let mut pending: Vec<Value> = Vec::new();
         let r = check_lines(&draft, Some(&table.id), "this capture", &s.lines);
         let mut series: BTreeMap<String, Vec<(u64, f64)>> = BTreeMap::new();
         let mut sources = BTreeSet::new();
@@ -703,6 +732,11 @@ impl Studio {
             s.live_source = None;
             s.live_source_id = None;
             s.live_values.clear();
+            if s.connect {
+                let mut primed = Vec::new();
+                prime_connected(s, &mut primed);
+                pending.extend(primed);
+            }
         }
         let out = json!({
             "ok": r.errors.is_empty(), "compiled": true, "problems": r.errors, "summary": r.summary,
@@ -711,6 +745,9 @@ impl Studio {
         let event = json!({ "type": "checked", "yaml": yaml, "edited": s.draft_edited, "ok": out["ok"], "problems": out["problems"], "summary": out["summary"] });
         drop(st);
         self.emit(event);
+        for v in pending {
+            self.emit(v);
+        }
         Ok(out)
     }
 
@@ -883,9 +920,9 @@ impl Studio {
                     d.services.push(u.clone());
                 }
             }
-            if d.known.is_none() && !adv.mfr.is_empty() {
+            if d.known.is_none() {
                 if let Some(core) = &mut st.known_core {
-                    for m in core.on_advertisement(&Advertisement { device_id: &adv.device_id, name: adv.name.as_deref(), rssi: adv.rssi, manufacturer_data: &adv.mfr, now_ms }) {
+                    for m in core.on_advertisement(&Advertisement { device_id: &adv.device_id, name: adv.name.as_deref(), rssi: adv.rssi, manufacturer_data: &adv.mfr, services: &d.services, now_ms }) {
                         if let Message::SourceAppeared { name, .. } = m {
                             d.known = Some(name);
                         }
@@ -902,7 +939,7 @@ impl Studio {
                     }
                     let _ = s.append(line);
                     if let Some(core) = &mut s.live_core {
-                        let messages = core.on_advertisement(&Advertisement { device_id: &adv.device_id, name: adv.name.as_deref(), rssi: adv.rssi, manufacturer_data: &adv.mfr, now_ms: t });
+                        let messages = core.on_advertisement(&Advertisement { device_id: &adv.device_id, name: adv.name.as_deref(), rssi: adv.rssi, manufacturer_data: &adv.mfr, services: &adv.services, now_ms: t });
                         live_messages(s, messages, &mut out);
                     }
                 }
@@ -915,6 +952,7 @@ impl Studio {
 
     /// The device was connected: what it offers, and what could be read.
     pub fn on_connected(&self, gatt: Vec<GattService>, reads: Vec<(String, Vec<u8>)>, subscribed: Vec<String>) {
+        let mut out = Vec::new();
         let mut st = self.state.lock().unwrap();
         if let Some(s) = st.session.as_mut() {
             if let Some(Line::Header { gatt: g, .. }) = s.lines.first_mut() {
@@ -933,9 +971,13 @@ impl Studio {
             for (chr, value) in reads {
                 let _ = s.append(Line::Packet { t, kind: PacketKind::Read, name: None, rssi: None, mfr: None, service_data: BTreeMap::new(), chr: Some(chr), data: Some(hex(&value)) });
             }
+            prime_connected(s, &mut out);
         }
         drop(st);
         self.emit(json!({ "type": "connected", "gatt": gatt, "subscribed": subscribed }));
+        for v in out {
+            self.emit(v);
+        }
     }
 
     pub fn on_notify(&self, chr: &str, value: &[u8]) {
@@ -946,8 +988,15 @@ impl Studio {
         }
         let t = s.now();
         let _ = s.append(Line::Packet { t, kind: PacketKind::Notify, name: None, rssi: None, mfr: None, service_data: BTreeMap::new(), chr: Some(chr.to_string()), data: Some(hex(value)) });
+        let mut out = vec![json!({ "type": "packet", "t": t, "stream": chr, "hex": hex(value) })];
+        if let Some(core) = &mut s.live_core {
+            let messages = core.on_notification(LIVE_DEVICE, chr, value, t);
+            live_messages(s, messages, &mut out);
+        }
         drop(st);
-        self.emit(json!({ "type": "packet", "t": t, "stream": chr, "hex": hex(value) }));
+        for v in out {
+            self.emit(v);
+        }
     }
 
     /// Whether a write may go out now: only to a device this session is connected to.
@@ -992,6 +1041,32 @@ impl Studio {
             self.emit(json!({ "type": "devices", "devices": self.devices_json() }));
         }
     }
+}
+
+/// The device id a connected session's device has inside the live core.
+const LIVE_DEVICE: &str = "live";
+
+/// A connected session: tell the live core the device is there (its name and services), use every
+/// table that knows it, and say it is connected. From then on its notifications are decoded.
+fn prime_connected(s: &mut Session, out: &mut Vec<Value>) {
+    let (name, services) = match s.lines.first() {
+        Some(Line::Header { device, gatt, .. }) => {
+            let mut services = device.services.clone();
+            services.extend(gatt.iter().map(|g| g.uuid.clone()));
+            (device.name.clone(), services)
+        }
+        _ => (None, Vec::new()),
+    };
+    let t = s.now();
+    let Some(core) = &mut s.live_core else { return };
+    let appeared = core.on_advertisement(&Advertisement { device_id: LIVE_DEVICE, name: name.as_deref(), rssi: None, manufacturer_data: &[], services: &services, now_ms: t });
+    for m in &appeared {
+        if let Message::SourceAppeared { source_id, connectable: true, .. } = m {
+            let _ = core.use_source(source_id, t);
+        }
+    }
+    core.on_connected(LIVE_DEVICE, t);
+    live_messages(s, appeared, out);
 }
 
 fn live_core(registry: Option<&Registry>, draft: Option<&str>) -> Option<Core> {
@@ -1177,6 +1252,7 @@ mod tests {
         assert!(s.confirm("heart_rate", None, false).is_err());
         assert!(s.save("x", false).is_err(), "not while recording");
         s.record_stop().unwrap();
+        let first_file = s.state_json()["session"]["file"].as_str().unwrap().to_string();
         // the capture holds only the chosen device, the note and both confirmations
         let c = s.capture_json().unwrap();
         assert_eq!(c["packets"].as_array().unwrap().len(), 2);
@@ -1195,6 +1271,16 @@ mod tests {
         // the solver works from the note
         let solved = s.solve(None).unwrap();
         assert_eq!(solved["fields"]["power"]["candidates"][0]["expr"], "u8[8]", "two packets under 256 W: one byte is all they show");
+        // starting again is a new recording in a new file; the first one stays as it was
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        s.record_start(None).unwrap();
+        s.on_adv(adv(keiser(160, 830, 197)));
+        s.record_stop().unwrap();
+        let again = s.capture_json().unwrap();
+        assert_eq!(again["packets"].as_array().unwrap().len(), 1);
+        assert_ne!(again["session"]["file"].as_str().unwrap(), first_file);
+        assert_eq!(ofp_capture::read_file(Path::new(&first_file)).unwrap().len(), 6);
+        assert_eq!(s.captures_json().as_array().unwrap().len(), 2, "both are in the history");
         // everything the page needs was announced
         let mut kinds = BTreeSet::new();
         while let Ok(e) = events.try_recv() {
@@ -1207,6 +1293,43 @@ mod tests {
     }
 
     #[test]
+    fn a_connected_sensor_is_decoded_live_by_a_draft_and_a_notify_table_can_be_written_for_it() {
+        use ofp_capture::{GattCharacteristic, GattService};
+        let (s, dir, _) = studio("notify", true);
+        const SERVICE: &str = "40b50000-30b5-11e5-a151-feff819cdc90";
+        const CHR: &str = "40b50004-30b5-11e5-a151-feff819cdc90";
+        // heard: a name, no data in the advert → the Studio will connect to it. The registry's draft knows it.
+        s.on_adv(AdvIn { device_id: "dev-t".into(), name: Some("TYME-1A2B".into()), rssi: Some(-55), ..Default::default() });
+        let listed = s.devices_json();
+        assert_eq!(listed[0]["has_data"], false);
+        assert!(listed[0]["known"].as_str().unwrap().starts_with("Tymewear VitalPro"), "{listed}");
+        s.open_device("dev-t").unwrap();
+        let (_, connect_to) = s.record_start(None).unwrap();
+        assert_eq!(connect_to.as_deref(), Some("dev-t"));
+        s.on_connected(vec![GattService { uuid: SERVICE.into(), characteristics: vec![GattCharacteristic { uuid: CHR.into(), properties: vec!["notify".into()] }] }], vec![], vec![CHR.into()]);
+        // one breath: 15 breaths/min, 1.80 L, 27 L/min
+        let breath = ofp_capture::unhex("01 10000000 9600 fa00 b400 b400 0000 0000").unwrap();
+        s.on_notify(CHR, &breath);
+        let st = s.state_json();
+        assert_eq!(st["session"]["live"]["values"]["breathing_rate"], 15.0, "{}", st["session"]["live"]);
+        assert_eq!(st["session"]["live"]["values"]["minute_ventilation"], 27.0);
+        // the owner says the volume is wrong and what they saw
+        assert_eq!(s.confirm("tidal_volume", Some(0.9), true).unwrap()["ok"], false);
+        s.record_stop().unwrap();
+        // a table of one's own for this stream: proposed as a notify table, checked against the recording
+        let draft = s.set_design(serde_json::from_str(&format!(r#"{{"name":"My breathing sensor","stream":"{CHR}","only_when":"u8[0] == 1","mappings":[{{"field":"tidal_volume","expr":"u16le[9] / 200"}}]}}"#)).unwrap()).unwrap();
+        let yaml = draft["yaml"].as_str().unwrap();
+        assert!(yaml.contains("reader: notify") && yaml.contains(&format!("characteristic: \"{CHR}\"")) && yaml.contains(&format!("service: \"{SERVICE}\"")), "{yaml}");
+        // 180 / 200 = 0.9: what the owner saw, so their "wrong" is answered
+        let checked = s.check_table(yaml).unwrap();
+        assert_eq!(checked["ok"], true, "{checked}");
+        assert_eq!(checked["series"]["tidal_volume"][0][1], 0.9);
+        // with the old scale the same recording does not pass
+        assert_eq!(s.check_table(&yaml.replace("/ 200", "/ 100")).unwrap()["ok"], false);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn a_new_field_is_drafted_only_when_nothing_like_it_exists() {
         let (s, dir, _) = studio("field", false);
         let req = |key: &str, name: &str, unit: &str, confirm: bool| FieldReq { key: key.into(), name: name.into(), unit: unit.into(), ty: "decimal".into(), decimals: 1, min: 30.0, max: 45.0, kind: "instantaneous".into(), description: "Core body temperature right now.".into(), confirm_new: confirm };
@@ -1214,11 +1337,14 @@ mod tests {
         let alike = s.add_field(req("pedal_power", "Pedal power", "W", false)).unwrap();
         assert_eq!(alike["similar"][0]["key"], "power");
         assert!(!dir.join("registry/fields/pedal_power.yaml").exists());
-        // body temperature is new
-        let added = s.add_field(req("body_temperature", "Body temperature", "°C", false)).unwrap();
-        assert_eq!(added["key"], "body_temperature");
-        assert!(s.state_json()["registry"]["fields"].as_array().unwrap().iter().any(|f| f["key"] == "body_temperature" && f["tier"] == "experimental"));
-        assert!(s.add_field(req("body_temperature", "Body temperature", "°C", true)).is_err(), "no duplicates");
+        // "body temperature" now has close relatives too: the core and skin temperature fields are offered
+        let alike = s.add_field(req("body_temperature", "Body temperature", "°C", false)).unwrap();
+        assert!(alike["similar"].as_array().unwrap().iter().any(|f| f["key"] == "core_temperature"), "{alike}");
+        // a rep count is new
+        let added = s.add_field(req("rep_count", "Rep count", "reps", false)).unwrap();
+        assert_eq!(added["key"], "rep_count");
+        assert!(s.state_json()["registry"]["fields"].as_array().unwrap().iter().any(|f| f["key"] == "rep_count" && f["tier"] == "experimental"));
+        assert!(s.add_field(req("rep_count", "Rep count", "reps", true)).is_err(), "no duplicates");
         assert!(s.add_field(req("Bad Key", "Something else entirely", "zz", true)).is_err());
         assert!(!dir.join("registry/fields/Bad Key.yaml").exists());
         assert!(check::run(&dir.join("registry"), false).errors.iter().all(|e| !e.contains("fields/")));

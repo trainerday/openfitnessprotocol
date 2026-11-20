@@ -1,0 +1,13 @@
+id: 13
+key: breathing_rate
+name: Breathing rate
+unit: br/min
+type: decimal
+decimals: 1
+min: 0
+max: 120
+kind: instantaneous
+tier: experimental
+tolerance: { abs: 3, pct: 10 }
+description: >
+  Breaths per minute right now. Sensors that report once per breath give the rate of the last breath.

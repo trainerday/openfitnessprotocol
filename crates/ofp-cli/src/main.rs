@@ -132,7 +132,7 @@ fn run(cli: Cli) -> Result<bool, String> {
             let reg = load(&cli.registry)?;
             let data = ofp_capture::unhex(&hex)?;
             let mut core = reg.core();
-            let messages = core.on_advertisement(&ofp_core::Advertisement { device_id: "decode", name: name.as_deref(), rssi: None, manufacturer_data: &data, now_ms: 0 });
+            let messages = core.on_advertisement(&ofp_core::Advertisement { device_id: "decode", name: name.as_deref(), rssi: None, manufacturer_data: &data, services: &[], now_ms: 0 });
             if messages.is_empty() {
                 println!("no table decodes this packet");
                 return Ok(false);

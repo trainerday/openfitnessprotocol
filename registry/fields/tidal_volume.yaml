@@ -1,0 +1,14 @@
+id: 14
+key: tidal_volume
+name: Tidal volume
+unit: L
+type: decimal
+decimals: 2
+min: 0
+max: 10
+kind: instantaneous
+tier: experimental
+tolerance: { abs: 0.3, pct: 15 }
+description: >
+  Air moved by the last breath, in litres. On sensors that estimate it from chest movement this is an
+  approximation, not a calibrated volume.

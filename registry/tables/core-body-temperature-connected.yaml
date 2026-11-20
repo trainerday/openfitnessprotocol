@@ -1,0 +1,51 @@
+id: core-body-temperature-connected
+name: CORE body temperature (connected)
+reader: notify
+version: 1
+# Draft: written from the maker's documentation, not yet tried on a sensor.
+status: draft
+
+provenance: >
+  greenTEG's published "CoreTemp BLE Service Specification" (the Core Body Temperature
+  characteristic). No code from other projects.
+verified_on:
+  - not verified on a sensor yet
+
+# Connected, the sensor sends more than its advertisement does: skin temperature, the heart rate
+# it receives from a paired strap, and a heat strain index.
+match:
+  - service: 00002100-5b1e-4347-b07c-97b514dae121
+  - name_prefix: CORE
+
+notify:
+  service: 00002100-5b1e-4347-b07c-97b514dae121
+  characteristic: 00002101-5b1e-4347-b07c-97b514dae121
+  min_length: 3
+
+# One notification:
+#   0     flags: bit 0 skin temperature valid, bit 1 reserved value valid, bit 2 quality valid,
+#         bit 3 temperatures are in Fahrenheit, bit 4 heart rate valid, bit 5 heat strain valid
+#   1-2   core temperature, hundredths of a degree, signed; 0x7FFF = no reading
+#   3-4   skin temperature, hundredths of a degree, signed
+#   5-6   reserved
+#   7     quality and state
+#   8     heart rate, beats per minute
+#   9     heat strain index, tenths
+# TO CHECK ON A SENSOR: the specification marks the fields after the core temperature
+# "if present". This draft assumes they always keep these positions and the flags only say whether
+# each one is valid. If a field is left out when its flag is clear, the positions after it shift.
+stale_after_ms: 15000
+
+fields:
+  core_temperature:
+    value: "u8[0] & 8 ? (i16le[1] / 100 - 32) * 5 / 9 : i16le[1] / 100"
+    only_when: i16le[1] != 32767
+  skin_temperature:
+    value: "u8[0] & 8 ? (i16le[3] / 100 - 32) * 5 / 9 : i16le[3] / 100"
+    only_when: u8[0] & 1
+  heart_rate:
+    value: u8[8]
+    only_when: u8[0] & 16
+  heat_strain_index:
+    value: u8[9] / 10
+    only_when: u8[0] & 32

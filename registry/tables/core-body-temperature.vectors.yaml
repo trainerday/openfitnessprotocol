@@ -1,0 +1,13 @@
+# From the example in the maker's implementation notes (not a capture).
+- name: the documented example advertisement, 37.299 °C
+  device_name: CORE
+  manufacturer_data: "0BF6 00 04 B391"
+  expect:
+    source_id: "core-body-temperature:vector"
+    fields: { core_temperature: 37.3 }
+
+- name: a value far from any body temperature is not passed on
+  manufacturer_data: "0BF6 00 04 1000"
+  expect:
+    source_id: "core-body-temperature:vector"
+    absent: [core_temperature]

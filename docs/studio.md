@@ -39,8 +39,12 @@ what the owner saw.
 Before you add: a banner tells you when the registry already decodes the device (**extend that
 table**), and a new field is refused once when a similar one exists (**reuse fields**).
 
-Devices that must be connected to can be recorded, explored and tested today. Saving a *table* for
-them needs a reader the core does not have yet.
+Devices that must be connected to work the same way as broadcast ones: choose the characteristic's
+stream in Map, and the table is written as a `reader: notify` table.
+
+**Drafts.** A table marked `status: draft` was written from documentation, without the device. The
+Studio decodes with it and says so above its values; the owner's right / wrong answers in Live are
+what verify it.
 
 ## A person and an assistant on the same session
 

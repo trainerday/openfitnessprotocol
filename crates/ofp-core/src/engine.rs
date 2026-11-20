@@ -21,7 +21,27 @@ pub struct Advertisement<'a> {
     pub rssi: Option<i16>,
     /// Manufacturer data, raw: the 2-byte company id first (when the device sends one).
     pub manufacturer_data: &'a [u8],
+    /// Service UUIDs the device advertises (text, any form).
+    pub services: &'a [String],
     pub now_ms: u64,
+}
+
+/// A characteristic the host subscribes to for a source.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct Subscription {
+    pub service: String,
+    pub characteristic: String,
+}
+
+/// A UUID in one form for comparing: lower case, no dashes, the Bluetooth base UUID shortened
+/// (`0000180D-0000-1000-8000-00805F9B34FB` → `180d`).
+pub fn normalize_uuid(uuid: &str) -> String {
+    let u: String = uuid.chars().filter(|c| *c != '-').flat_map(|c| c.to_lowercase()).collect();
+    if u.len() == 32 && u.starts_with("0000") && u.ends_with("00001000800000805f9b34fb") {
+        u[4..8].to_string()
+    } else {
+        u
+    }
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
@@ -53,7 +73,17 @@ pub enum Message {
         #[serde(skip_serializing_if = "Option::is_none")]
         instance: Option<i64>,
         fields: Vec<FieldDescription>,
+        /// The source is read over a connection: when the rider picks it, the core asks the host to
+        /// connect and subscribe (`connect`). False for broadcast-only devices.
+        #[serde(skip_serializing_if = "core::ops::Not::not")]
+        connectable: bool,
     },
+    /// For the host: connect to this device and subscribe to these characteristics, then pass
+    /// their notifications in. Sent when a connectable source comes into use, and again while it
+    /// is in use and not connected.
+    Connect { source_id: String, device_id: String, subscribe: Vec<Subscription> },
+    /// For the host: the source is no longer in use, the connection is not needed for it.
+    Disconnect { source_id: String, device_id: String },
     Values {
         source_id: String,
         t: u64,
@@ -96,7 +126,19 @@ struct Source {
     /// When values last went out to the host (a packet or a repeat).
     emitted_ms: u64,
     rssi: Option<i16>,
+    /// A source read over a connection.
+    gatt: Option<Gatt>,
 }
+
+struct Gatt {
+    device_id: String,
+    connected: bool,
+    /// When the host was last asked to connect.
+    asked_ms: Option<u64>,
+}
+
+/// Ask the host again to connect a source in use at most this often.
+const CONNECT_RETRY_MS: u64 = 5000;
 
 /// What the host sets once, at the start.
 #[derive(Clone, Debug, Default)]
@@ -133,16 +175,28 @@ impl Core {
             return Err(format!("bundle version {} is not supported (this core reads {})", bundle.version, BUNDLE_VERSION));
         }
         for t in &bundle.tables {
-            if t.reader != "broadcast" {
-                return Err(format!("table {}: reader '{}' is not in this core", t.id, t.reader));
+            match t.reader.as_str() {
+                "broadcast" => {
+                    for m in &t.matches {
+                        if m.manufacturer_id.is_none() && m.name_prefix.is_none() {
+                            return Err(format!("table {}: a match rule without a company id must name the device", t.id));
+                        }
+                    }
+                }
+                "notify" => {
+                    if t.notify.is_none() {
+                        return Err(format!("table {}: a notify table says which characteristic it reads", t.id));
+                    }
+                    for m in &t.matches {
+                        if m.manufacturer_id.is_none() && m.name_prefix.is_none() && m.service.is_none() {
+                            return Err(format!("table {}: a match rule needs a name, a company id or an advertised service", t.id));
+                        }
+                    }
+                }
+                other => return Err(format!("table {}: reader '{other}' is not in this core", t.id)),
             }
             if t.matches.is_empty() {
                 return Err(format!("table {}: no match rule", t.id));
-            }
-            for m in &t.matches {
-                if m.manufacturer_id.is_none() && m.name_prefix.is_none() {
-                    return Err(format!("table {}: a match rule without a company id must name the device", t.id));
-                }
             }
             let exprs = t
                 .only_when
@@ -191,6 +245,12 @@ impl Core {
         if !s.in_use {
             s.in_use = true;
             out.push(Message::SourceInUse { source_id: source_id.to_string(), auto: false });
+            if let Some(g) = &mut s.gatt {
+                if !g.connected {
+                    g.asked_ms = Some(now_ms);
+                    out.push(Message::Connect { source_id: source_id.to_string(), device_id: g.device_id.clone(), subscribe: subscriptions(&self.bundle.tables[s.table]) });
+                }
+            }
             if !s.stale && !s.values.is_empty() {
                 s.emitted_ms = now_ms;
                 out.push(Message::Values { source_id: source_id.to_string(), t: now_ms, fields: s.values.clone(), out_of_range: Vec::new(), stale: false, repeat: true, rssi: s.rssi });
@@ -200,11 +260,87 @@ impl Core {
     }
 
     /// The rider stopped using it. The host forgets it too (takes it out of `remembered`).
-    pub fn release_source(&mut self, source_id: &str) {
+    pub fn release_source(&mut self, source_id: &str) -> Vec<Message> {
+        let mut out = Vec::new();
         if let Some(s) = self.sources.get_mut(source_id) {
+            if s.in_use {
+                if let Some(g) = &s.gatt {
+                    out.push(Message::Disconnect { source_id: source_id.to_string(), device_id: g.device_id.clone() });
+                }
+            }
             s.in_use = false;
         }
         self.settings.remembered.retain(|r| r != source_id);
+        out
+    }
+
+    /// The host connected the device and subscribed, as a `connect` message asked.
+    pub fn on_connected(&mut self, device_id: &str, _now_ms: u64) {
+        for s in self.sources.values_mut() {
+            if let Some(g) = &mut s.gatt {
+                if g.device_id == device_id {
+                    g.connected = true;
+                }
+            }
+        }
+    }
+
+    /// The connection to the device ended (or could not be made). Its sources read zero at once.
+    pub fn on_disconnected(&mut self, device_id: &str, now_ms: u64) -> Vec<Message> {
+        let mut out = Vec::new();
+        for (id, s) in self.sources.iter_mut() {
+            let Some(g) = &mut s.gatt else { continue };
+            if g.device_id != device_id {
+                continue;
+            }
+            g.connected = false;
+            if !s.stale {
+                s.stale = true;
+                let fields = zeros(&self.bundle, &self.bundle.tables[s.table]);
+                for (k, v) in &fields {
+                    s.values.insert(k.clone(), v.clone());
+                }
+                s.emitted_ms = now_ms;
+                out.push(Message::Values { source_id: id.clone(), t: now_ms, fields, out_of_range: Vec::new(), stale: true, repeat: false, rssi: None });
+                out.push(Message::SourceStale { source_id: id.clone() });
+            }
+        }
+        out
+    }
+
+    /// One notification from a characteristic the core asked the host to subscribe to.
+    pub fn on_notification(&mut self, device_id: &str, characteristic: &str, data: &[u8], now_ms: u64) -> Vec<Message> {
+        let mut out = Vec::new();
+        let chr = normalize_uuid(characteristic);
+        for (id, s) in self.sources.iter_mut() {
+            let Some(g) = &mut s.gatt else { continue };
+            if g.device_id != device_id {
+                continue;
+            }
+            let table = &self.bundle.tables[s.table];
+            let Some(spec) = &table.notify else { continue };
+            if normalize_uuid(&spec.characteristic) != chr || data.len() < spec.min_length {
+                continue;
+            }
+            g.connected = true; // data is the proof
+            if let Some(cond) = &table.only_when {
+                if cond.eval(data).unwrap_or(0.0) == 0.0 {
+                    continue;
+                }
+            }
+            let (fields, out_of_range) = decode(&self.bundle, table, data);
+            s.last_ms = now_ms;
+            s.stale = false;
+            for (k, v) in &fields {
+                s.values.insert(k.clone(), v.clone());
+            }
+            for k in &out_of_range {
+                s.values.remove(k);
+            }
+            s.emitted_ms = now_ms;
+            out.push(Message::Values { source_id: id.clone(), t: now_ms, fields, out_of_range, stale: false, repeat: false, rssi: None });
+        }
+        out
     }
 
     pub fn is_in_use(&self, source_id: &str) -> bool {
@@ -224,17 +360,82 @@ impl Core {
     /// Pass in one advertisement. Returns nothing when no table knows the device.
     pub fn on_advertisement(&mut self, adv: &Advertisement) -> Vec<Message> {
         let mut out = Vec::new();
+        self.broadcast(adv, &mut out);
+        self.connectable(adv, &mut out);
+        out
+    }
+
+    /// Devices that are connected to: the advertisement only says the device is there.
+    fn connectable(&mut self, adv: &Advertisement, out: &mut Vec<Message>) {
         for (ti, table) in self.bundle.tables.iter().enumerate() {
+            if table.reader != "notify" || !table.matches.iter().any(|m| match_connectable(m, adv)) {
+                continue;
+            }
+            let source_id = format!("{}:{}", table.id, adv.device_id);
+            if !self.sources.contains_key(&source_id) {
+                if self.sources.len() >= MAX_SOURCES {
+                    return;
+                }
+                let mut description = describe(&self.bundle, table, &source_id, None);
+                if let Message::SourceAppeared { name, connectable, .. } = &mut description {
+                    *connectable = true;
+                    // the device's own name tells two of the same kind apart
+                    if let Some(n) = adv.name.map(str::trim).filter(|n| !n.is_empty() && !name.contains(n)) {
+                        *name = format!("{name} · {n}");
+                    }
+                }
+                out.push(description.clone());
+                self.sources.insert(
+                    source_id.clone(),
+                    Source {
+                        table: ti,
+                        last_ms: adv.now_ms,
+                        // nothing has been read yet: there is nothing to declare silent
+                        stale: true,
+                        in_use: false,
+                        description,
+                        values: BTreeMap::new(),
+                        emitted_ms: adv.now_ms,
+                        rssi: adv.rssi,
+                        gatt: Some(Gatt { device_id: adv.device_id.to_string(), connected: false, asked_ms: None }),
+                    },
+                );
+            }
+            let remembered = self.settings.remembered.iter().any(|r| *r == source_id);
+            let Some(s) = self.sources.get_mut(&source_id) else { continue };
+            if adv.rssi.is_some() {
+                s.rssi = adv.rssi;
+            }
+            if remembered && !s.in_use {
+                s.in_use = true;
+                // being heard again counts as a fresh start for the "lost" clock
+                s.last_ms = adv.now_ms;
+                out.push(Message::SourceInUse { source_id: source_id.clone(), auto: true });
+            }
+            let Some(g) = &mut s.gatt else { continue };
+            if s.in_use && !g.connected && g.asked_ms.is_none_or(|t| adv.now_ms.saturating_sub(t) >= CONNECT_RETRY_MS) {
+                g.asked_ms = Some(adv.now_ms);
+                out.push(Message::Connect { source_id: source_id.clone(), device_id: g.device_id.clone(), subscribe: subscriptions(table) });
+            }
+        }
+    }
+
+    /// Broadcast-only devices: the values are in the advertisement itself.
+    fn broadcast(&mut self, adv: &Advertisement, out: &mut Vec<Message>) {
+        for (ti, table) in self.bundle.tables.iter().enumerate() {
+            if table.reader != "broadcast" {
+                continue;
+            }
             let Some(payload) = table.matches.iter().find_map(|m| match_rule(m, adv)) else { continue };
             if let Some(cond) = &table.only_when {
                 if cond.eval(payload).unwrap_or(0.0) == 0.0 {
-                    return out; // this device, but not a packet we read
+                    return; // this device, but not a packet we read
                 }
             }
             let instance = match &table.instance {
                 Some(i) => match i.value.eval(payload) {
                     Some(v) => Some(v as i64),
-                    None => return out,
+                    None => return,
                 },
                 None => None,
             };
@@ -250,13 +451,13 @@ impl Core {
                 }
                 None => {
                     if self.sources.len() >= MAX_SOURCES {
-                        return out;
+                        return;
                     }
                     let description = describe(&self.bundle, table, &source_id, instance);
                     out.push(description.clone());
                     self.sources.insert(
                         source_id.clone(),
-                        Source { table: ti, last_ms: adv.now_ms, stale: false, in_use: false, description, values: BTreeMap::new(), emitted_ms: adv.now_ms, rssi: adv.rssi },
+                        Source { table: ti, last_ms: adv.now_ms, stale: false, in_use: false, description, values: BTreeMap::new(), emitted_ms: adv.now_ms, rssi: adv.rssi, gatt: None },
                     );
                 }
             }
@@ -269,22 +470,7 @@ impl Core {
                 }
             }
 
-            let mut fields = BTreeMap::new();
-            let mut out_of_range = Vec::new();
-            for tf in &table.fields {
-                if let Some(cond) = &tf.only_when {
-                    if cond.eval(payload).unwrap_or(0.0) == 0.0 {
-                        continue;
-                    }
-                }
-                let (Some(v), Some(def)) = (tf.value.eval(payload), self.bundle.field(&tf.field)) else { continue };
-                let v = round_to(v, def.decimals);
-                if v.is_nan() || v < def.min || v > def.max {
-                    out_of_range.push(tf.field.clone());
-                } else {
-                    fields.insert(tf.field.clone(), to_json(v, def));
-                }
-            }
+            let (fields, out_of_range) = decode(&self.bundle, table, payload);
             if let Some(s) = self.sources.get_mut(&source_id) {
                 for (k, v) in &fields {
                     s.values.insert(k.clone(), v.clone());
@@ -298,10 +484,10 @@ impl Core {
                 }
             }
             out.push(Message::Values { source_id, t: adv.now_ms, fields, out_of_range, stale: false, repeat: false, rssi: adv.rssi });
-            return out;
+            return;
         }
-        out
     }
+
 
     /// Call about once a second. Silent sources read zero (`source_stale`); sources in use have
     /// their standing values repeated (`repeat_ms`) and are given up after `lost_after_ms`.
@@ -313,14 +499,7 @@ impl Core {
             let silent_for = now_ms.saturating_sub(s.last_ms);
             if !s.stale && silent_for >= table.stale_after_ms.max(settings.min_stale_ms) {
                 s.stale = true;
-                let mut fields = BTreeMap::new();
-                for tf in &table.fields {
-                    if let Some(def) = self.bundle.field(&tf.field) {
-                        if def.kind == SampleKind::Instantaneous {
-                            fields.insert(tf.field.clone(), to_json(0.0, def));
-                        }
-                    }
-                }
+                let fields = zeros(&self.bundle, table);
                 for (k, v) in &fields {
                     s.values.insert(k.clone(), v.clone());
                 }
@@ -343,6 +522,78 @@ impl Core {
         }
         out
     }
+}
+
+/// A UUID as a Bluetooth library takes it: `180d`, or lower case with dashes.
+fn display_uuid(uuid: &str) -> String {
+    let u = normalize_uuid(uuid);
+    if u.len() == 32 {
+        format!("{}-{}-{}-{}-{}", &u[0..8], &u[8..12], &u[12..16], &u[16..20], &u[20..32])
+    } else {
+        u
+    }
+}
+
+/// A table's fields from one payload: the values in range, and the keys of those that were not.
+fn decode(bundle: &Bundle, table: &Table, payload: &[u8]) -> (BTreeMap<String, Value>, Vec<String>) {
+    let mut fields = BTreeMap::new();
+    let mut out_of_range = Vec::new();
+    for tf in &table.fields {
+        if let Some(cond) = &tf.only_when {
+            if cond.eval(payload).unwrap_or(0.0) == 0.0 {
+                continue;
+            }
+        }
+        let (Some(v), Some(def)) = (tf.value.eval(payload), bundle.field(&tf.field)) else { continue };
+        let v = round_to(v, def.decimals);
+        if v.is_nan() || v < def.min || v > def.max {
+            out_of_range.push(tf.field.clone());
+        } else {
+            fields.insert(tf.field.clone(), to_json(v, def));
+        }
+    }
+    (fields, out_of_range)
+}
+
+/// Zero for every instantaneous field of a table: what a silent source reads.
+fn zeros(bundle: &Bundle, table: &Table) -> BTreeMap<String, Value> {
+    let mut fields = BTreeMap::new();
+    for tf in &table.fields {
+        if let Some(def) = bundle.field(&tf.field) {
+            if def.kind == SampleKind::Instantaneous {
+                fields.insert(tf.field.clone(), to_json(0.0, def));
+            }
+        }
+    }
+    fields
+}
+
+fn subscriptions(table: &Table) -> Vec<Subscription> {
+    table.notify.iter().map(|n| Subscription { service: display_uuid(&n.service), characteristic: display_uuid(&n.characteristic) }).collect()
+}
+
+/// Does this advertisement come from a device a `notify` table reads? Every criterion the rule
+/// gives must hold.
+fn match_connectable(m: &MatchRule, adv: &Advertisement) -> bool {
+    if let Some(prefix) = &m.name_prefix {
+        let Some(name) = adv.name.map(str::trim) else { return false };
+        if name.len() < prefix.len() || !name.as_bytes()[..prefix.len()].eq_ignore_ascii_case(prefix.as_bytes()) {
+            return false;
+        }
+    }
+    if let Some(id) = m.manufacturer_id {
+        let d = adv.manufacturer_data;
+        if d.len() < 2 || u16::from_le_bytes([d[0], d[1]]) != id {
+            return false;
+        }
+    }
+    if let Some(service) = &m.service {
+        let want = normalize_uuid(service);
+        if !adv.services.iter().any(|s| normalize_uuid(s) == want) {
+            return false;
+        }
+    }
+    true
 }
 
 /// The payload a rule reads from this advertisement, or `None` when the rule does not match.
@@ -405,6 +656,7 @@ fn describe(bundle: &Bundle, table: &Table, source_id: &str, instance: Option<i6
         instance_label: label,
         instance,
         fields,
+        connectable: false,
     }
 }
 
@@ -447,7 +699,8 @@ mod tests {
                 name: "Bike".into(),
                 reader: "broadcast".into(),
                 version: 1,
-                matches: vec![MatchRule { manufacturer_id: Some(0x0102), name_prefix: None, min_length: 4, when: None }],
+                matches: vec![MatchRule { manufacturer_id: Some(0x0102), name_prefix: None, service: None, min_length: 4, when: None }],
+                notify: None,
                 only_when: Some(Expr::Bin(BinOp::Eq, Box::new(Expr::U8(0)), Box::new(Expr::Num(0.0)))),
                 instance: Some(Instance { label: "bike".into(), value: Expr::U8(1) }),
                 stale_after_ms: 3000,
@@ -460,7 +713,7 @@ mod tests {
     }
 
     fn adv(data: &[u8], now_ms: u64) -> Advertisement<'_> {
-        Advertisement { device_id: "d", name: None, rssi: Some(-50), manufacturer_data: data, now_ms }
+        Advertisement { device_id: "d", name: None, rssi: Some(-50), manufacturer_data: data, services: &[], now_ms }
     }
 
     fn values(m: &Message) -> (&str, &BTreeMap<String, Value>, bool) {
@@ -551,6 +804,8 @@ mod tests {
                 Message::SourceInUse { auto: true, .. } => "in_use_auto",
                 Message::SourceInUse { .. } => "in_use",
                 Message::SourceLost { .. } => "lost",
+                Message::Connect { .. } => "connect",
+                Message::Disconnect { .. } => "disconnect",
             })
             .collect()
     }
@@ -609,6 +864,96 @@ mod tests {
         core.release_source("bike:7");
         let recent = core.sources(45_000, 30_000);
         assert!(matches!(&recent[..], [Message::SourceAppeared { source_id, .. }] if source_id == "bike:8"));
+    }
+
+    /// A sensor that is connected to: its custom service notifies temperature x 100.
+    fn sensor_bundle() -> Bundle {
+        let mut b = bundle();
+        b.fields.push(FieldDef { id: 3, key: "temp".into(), name: "Temperature".into(), unit: "C".into(), ty: FieldType::Decimal, decimals: 2, min: 20.0, max: 45.0, kind: SampleKind::Instantaneous, tier: Tier::Experimental });
+        b.tables.push(Table {
+            id: "sensor".into(),
+            name: "Sensor".into(),
+            reader: "notify".into(),
+            version: 1,
+            matches: vec![MatchRule { manufacturer_id: None, name_prefix: Some("CORE".into()), service: Some("00002100-5B1E-4347-B07C-97B514DAE121".into()), min_length: 0, when: None }],
+            notify: Some(crate::bundle::NotifySpec { service: "00002100-5b1e-4347-b07c-97b514dae121".into(), characteristic: "00002101-5B1E-4347-B07C-97B514DAE121".into(), min_length: 3 }),
+            only_when: Some(Expr::Bin(BinOp::Ne, Box::new(Expr::I16le(1)), Box::new(Expr::Num(32767.0)))),
+            instance: None,
+            stale_after_ms: 5000,
+            fields: vec![TableField { field: "temp".into(), value: Expr::Bin(BinOp::Div, Box::new(Expr::I16le(1)), Box::new(Expr::Num(100.0))), only_when: None }],
+        });
+        b
+    }
+
+    fn sensor_adv<'a>(services: &'a [String], name: &'a str, now_ms: u64) -> Advertisement<'a> {
+        Advertisement { device_id: "dev9", name: Some(name), rssi: Some(-60), manufacturer_data: &[], services, now_ms }
+    }
+
+    const CHR: &str = "00002101-5b1e-4347-b07c-97b514dae121";
+
+    #[test]
+    fn a_connectable_sensor_from_advert_to_values() {
+        let mut core = Core::from_bundle(sensor_bundle()).unwrap();
+        let svc = vec![String::from("00002100-5b1e-4347-b07c-97b514dae121")];
+        // the name alone, or the service alone, is not this rule
+        assert!(core.on_advertisement(&sensor_adv(&[], "CORE 1234", 0)).is_empty());
+        assert!(core.on_advertisement(&sensor_adv(&svc, "Other", 0)).is_empty());
+        let m = core.on_advertisement(&sensor_adv(&svc, "CORE 1234", 0));
+        assert!(matches!(&m[..], [Message::SourceAppeared { source_id, name, connectable: true, .. }] if source_id == "sensor:dev9" && name == "Sensor · CORE 1234"));
+        // heard, not picked: no connection is asked for, and nothing goes "silent"
+        assert!(core.on_advertisement(&sensor_adv(&svc, "CORE 1234", 1000)).is_empty());
+        assert!(core.tick(20_000).is_empty());
+        // the rider picks it: the host is asked to connect and subscribe
+        let m = core.use_source("sensor:dev9", 21_000).unwrap();
+        assert_eq!(kinds(&m), ["in_use", "connect"]);
+        assert!(matches!(&m[1], Message::Connect { device_id, subscribe, .. } if device_id == "dev9" && subscribe[0].characteristic == CHR));
+        core.on_connected("dev9", 21_500);
+        // 37.25 C, then "no reading" (0x7FFF), then a short packet, then another characteristic
+        let m = core.on_notification("dev9", "00002101-5B1E-4347-B07C-97B514DAE121", &[0, 0x8d, 0x0e], 22_000);
+        assert_eq!(values(&m[0]).1["temp"], serde_json::json!(37.25));
+        assert!(core.on_notification("dev9", CHR, &[0, 0xff, 0x7f], 22_500).is_empty());
+        assert!(core.on_notification("dev9", CHR, &[0, 0x8d], 22_600).is_empty());
+        assert!(core.on_notification("dev9", "2a19", &[80], 22_700).is_empty());
+        assert!(core.on_notification("other", CHR, &[0, 0x8d, 0x0e], 22_800).is_empty());
+        // out of the plausible range: not passed on
+        assert!(matches!(&core.on_notification("dev9", CHR, &[0, 0x10, 0x27], 23_000)[0], Message::Values { out_of_range, .. } if out_of_range == &vec![String::from("temp")]));
+    }
+
+    #[test]
+    fn a_dropped_connection_reads_zero_and_is_asked_for_again_when_the_device_is_heard() {
+        let mut core = Core::from_bundle(sensor_bundle()).unwrap();
+        *core.settings_mut() = Settings { lost_after_ms: 60_000, ..Default::default() };
+        let svc = vec![String::from("00002100-5b1e-4347-b07c-97b514dae121")];
+        core.on_advertisement(&sensor_adv(&svc, "CORE", 0));
+        core.use_source("sensor:dev9", 100).unwrap();
+        core.on_connected("dev9", 200);
+        core.on_notification("dev9", CHR, &[0, 0x8d, 0x0e], 1000);
+        assert_eq!(kinds(&core.on_disconnected("dev9", 2000)), ["zeros", "stale"]);
+        assert!(core.on_disconnected("dev9", 2100).is_empty(), "once");
+        // adverts return: connect again, but not on every advert
+        assert_eq!(kinds(&core.on_advertisement(&sensor_adv(&svc, "CORE", 6000))), ["connect"]);
+        assert!(core.on_advertisement(&sensor_adv(&svc, "CORE", 7000)).is_empty());
+        assert_eq!(kinds(&core.on_advertisement(&sensor_adv(&svc, "CORE", 11_500))), ["connect"]);
+        // it never comes back: lost, and the host is told to let go when the rider releases it
+        assert_eq!(kinds(&core.tick(61_500)), ["lost"]);
+        core.use_source("sensor:dev9", 62_000).unwrap();
+        assert_eq!(kinds(&core.release_source("sensor:dev9")), ["disconnect"]);
+        assert!(core.release_source("sensor:dev9").is_empty());
+    }
+
+    #[test]
+    fn a_remembered_sensor_is_connected_as_soon_as_it_is_heard() {
+        let mut core = Core::from_bundle(sensor_bundle()).unwrap();
+        *core.settings_mut() = Settings { remembered: vec!["sensor:dev9".into()], ..Default::default() };
+        let svc = vec![String::from("00002100-5b1e-4347-b07c-97b514dae121")];
+        assert_eq!(kinds(&core.on_advertisement(&sensor_adv(&svc, "CORE", 0))), ["appeared", "in_use_auto", "connect"]);
+    }
+
+    #[test]
+    fn uuids_compare_in_any_form() {
+        assert_eq!(normalize_uuid("0000180D-0000-1000-8000-00805F9B34FB"), "180d");
+        assert_eq!(normalize_uuid("180D"), "180d");
+        assert_eq!(normalize_uuid("00002101-5B1E-4347-B07C-97B514DAE121"), "000021015b1e4347b07c97b514dae121");
     }
 
     #[test]

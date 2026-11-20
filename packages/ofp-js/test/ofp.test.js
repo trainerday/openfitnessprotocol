@@ -156,6 +156,33 @@ for (const [name, engine] of Object.entries(engines)) {
   })
 }
 
+test('a sensor that is connected to: the app is asked to connect, and its notifications become values', () => {
+  // the registry bundle plus one small notify table (a strap whose custom characteristic sends heart rate in byte 1)
+  const b = JSON.parse(bundle)
+  b.tables.push({ id: 'strap', name: 'Strap', reader: 'notify', version: 1, match: [{ name_prefix: 'STRAP', min_length: 0 }],
+    notify: { service: 'aaaa0000-0000-4000-8000-000000000001', characteristic: 'aaaa0001-0000-4000-8000-000000000001', min_length: 2 },
+    stale_after_ms: 5000, fields: [{ field: 'heart_rate', value: { u8: 1 } }] })
+  const seen = { devices: [], connect: [], disconnect: [], values: [] }
+  let now = 1000
+  const ofp = new Ofp({ engine: wasmEngine(readFileSync(dist('ofp_core.wasm'))), bundle: JSON.stringify(b), tickMs: 0, now: () => now, minStaleMs: 0, repeatMs: 0,
+    on: { device: (d) => seen.devices.push(d), connect: (r) => seen.connect.push(r), disconnect: (r) => seen.disconnect.push(r), values: (v) => seen.values.push(v) } })
+  ofp.advertisement({ deviceId: 'dev-7', name: 'STRAP 01', services: ['180d'] })
+  assert.deepEqual([seen.devices[0].id, seen.devices[0].name, seen.devices[0].connectable], ['strap:dev-7', 'Strap · STRAP 01', true])
+  assert.equal(seen.connect.length, 0, 'not until the rider picks it')
+  assert.equal(ofp.use('strap:dev-7'), true)
+  assert.deepEqual(seen.connect, [{ id: 'strap:dev-7', deviceId: 'dev-7', subscribe: [{ service: 'aaaa0000-0000-4000-8000-000000000001', characteristic: 'aaaa0001-0000-4000-8000-000000000001' }] }])
+  ofp.connected('dev-7')
+  ofp.notification('dev-7', 'AAAA0001-0000-4000-8000-000000000001', new Uint8Array([0, 142]))
+  assert.equal(seen.values.at(-1).basic.heartRate, 142)
+  ofp.notification('dev-7', 'aaaa0001-0000-4000-8000-000000000001', '0090')
+  assert.equal(seen.values.at(-1).fields.heart_rate, 144)
+  ofp.disconnected('dev-7')
+  assert.equal(seen.values.at(-1).silent, true)
+  ofp.release('strap:dev-7')
+  assert.deepEqual(seen.disconnect, [{ id: 'strap:dev-7', deviceId: 'dev-7' }])
+  ofp.destroy()
+})
+
 test('adapter: react-native-ble-manager', () => {
   const peripheral = { id: 'AA:BB', name: 'M3', rssi: -60, advertising: { localName: 'M3', serviceUUIDs: [], manufacturerData: { '0102': { bytes: [...keiser({ power: 222 })].slice(2) }, '004c': { bytes: [1, 2] } } } }
   const adverts = rn.advertisementsFrom(peripheral, [0x0102, 0x0645])

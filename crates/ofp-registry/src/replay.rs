@@ -4,6 +4,9 @@ use ofp_capture::{unhex, Line, PacketKind};
 use ofp_core::{Advertisement, Core, Message};
 use std::collections::BTreeMap;
 
+/// The device id a capture is replayed under.
+const CAPTURE_DEVICE: &str = "capture";
+
 #[derive(Clone, Debug)]
 pub struct Decoded {
     pub t: u64,
@@ -15,6 +18,8 @@ pub struct Decoded {
 #[derive(Default, Debug)]
 pub struct Stats {
     pub adverts: usize,
+    /// Notifications from a connected device.
+    pub notifications: usize,
     pub other_packets: usize,
     /// Advertisements that produced values.
     pub decoded: usize,
@@ -54,7 +59,7 @@ impl Collector {
                     self.timeline.push(Decoded { t, source_id, fields: values_of(&fields), stale });
                 }
                 Message::SourceStale { .. } => self.stats.stale_events += 1,
-                Message::SourceInUse { .. } | Message::SourceLost { .. } => {}
+                Message::SourceInUse { .. } | Message::SourceLost { .. } | Message::Connect { .. } | Message::Disconnect { .. } => {}
             }
         }
     }
@@ -64,6 +69,27 @@ pub fn replay(core: &mut Core, lines: &[Line]) -> Result<Collector, String> {
     let mut c = Collector::default();
     let mut next_tick = 1000u64;
     let mut last_adv: Option<u64> = None;
+    // A recording of a connected device holds its notifications, not the advert that led to the
+    // connection. Play that part: the device is heard (name and services from the header), every
+    // table that knows it is used, and the connection is made.
+    let (name, services) = match lines.first() {
+        Some(Line::Header { device, gatt, .. }) => {
+            let mut services = device.services.clone();
+            services.extend(gatt.iter().map(|g| g.uuid.clone()));
+            (device.name.clone(), services)
+        }
+        _ => (None, Vec::new()),
+    };
+    if lines.iter().any(|l| matches!(l, Line::Packet { kind: PacketKind::Notify, .. })) {
+        let appeared = core.on_advertisement(&Advertisement { device_id: CAPTURE_DEVICE, name: name.as_deref(), rssi: None, manufacturer_data: &[], services: &services, now_ms: 0 });
+        for m in &appeared {
+            if let Message::SourceAppeared { source_id, connectable: true, .. } = m {
+                let _ = core.use_source(source_id, 0);
+            }
+        }
+        c.take(appeared);
+        core.on_connected(CAPTURE_DEVICE, 0);
+    }
     for line in lines {
         let t = line.t();
         if t > next_tick + 60_000 {
@@ -75,7 +101,17 @@ pub fn replay(core: &mut Core, lines: &[Line]) -> Result<Collector, String> {
             next_tick += 1000;
         }
         c.stats.duration_ms = c.stats.duration_ms.max(t);
-        if let Line::Packet { kind, name, rssi, mfr, .. } = line {
+        if let Line::Packet { kind, name, rssi, mfr, chr, data, .. } = line {
+            if *kind == PacketKind::Notify {
+                c.stats.notifications += 1;
+                if let Some(prev) = last_adv {
+                    c.stats.longest_gap_ms = c.stats.longest_gap_ms.max(t.saturating_sub(prev));
+                }
+                last_adv = Some(t);
+                let bytes = unhex(data.as_deref().unwrap_or(""))?;
+                c.take(core.on_notification(CAPTURE_DEVICE, chr.as_deref().unwrap_or(""), &bytes, t));
+                continue;
+            }
             if *kind != PacketKind::Adv {
                 c.stats.other_packets += 1;
                 continue;
@@ -86,7 +122,7 @@ pub fn replay(core: &mut Core, lines: &[Line]) -> Result<Collector, String> {
             }
             last_adv = Some(t);
             let data = unhex(mfr.as_deref().unwrap_or(""))?;
-            c.take(core.on_advertisement(&Advertisement { device_id: "capture", name: name.as_deref(), rssi: *rssi, manufacturer_data: &data, now_ms: t }));
+            c.take(core.on_advertisement(&Advertisement { device_id: CAPTURE_DEVICE, name: name.as_deref(), rssi: *rssi, manufacturer_data: &data, services: &services, now_ms: t }));
         }
     }
     Ok(c)

@@ -75,7 +75,7 @@ fn check_vectors(reg: &Registry, table: &str, path: &Path, errors: &mut Vec<Stri
             }
         };
         let mut core = reg.core();
-        let messages = core.on_advertisement(&Advertisement { device_id: "vector", name: v.device_name.as_deref(), rssi: None, manufacturer_data: &data, now_ms: 0 });
+        let messages = core.on_advertisement(&Advertisement { device_id: "vector", name: v.device_name.as_deref(), rssi: None, manufacturer_data: &data, services: &[], now_ms: 0 });
         let values = messages.iter().find_map(|m| match m {
             Message::Values { source_id, fields, .. } => Some((source_id.clone(), values_of(fields))),
             _ => None,
@@ -204,15 +204,16 @@ pub fn check_lines(reg: &Registry, table: Option<&str>, shown: &str, lines: &[Li
         }
     }
     let s = &c.stats;
+    let packets = s.adverts + s.notifications;
     let mins = (s.duration_ms as f64 / 60000.0).max(1.0 / 60.0);
     let mut summary = format!(
-        "{shown}: {} adverts in {:.1} min ({:.0}/min, longest gap {:.1} s), {} decoded ({:.0} %), {} noted values, {} confirmed, {} marked wrong",
-        s.adverts,
+        "{shown}: {} packets in {:.1} min ({:.0}/min, longest gap {:.1} s), {} decoded ({:.0} %), {} noted values, {} confirmed, {} marked wrong",
+        packets,
         mins,
-        s.adverts as f64 / mins,
+        packets as f64 / mins,
         s.longest_gap_ms as f64 / 1000.0,
         s.decoded,
-        if s.adverts > 0 { 100.0 * s.decoded as f64 / s.adverts as f64 } else { 0.0 },
+        if packets > 0 { 100.0 * s.decoded as f64 / packets as f64 } else { 0.0 },
         notes,
         confirmed,
         refuted
@@ -220,7 +221,7 @@ pub fn check_lines(reg: &Registry, table: Option<&str>, shown: &str, lines: &[Li
     for (k, n) in &s.out_of_range {
         summary.push_str(&format!("; {k} out of range {n}x"));
     }
-    let (decoded, adverts) = (c.stats.decoded, c.stats.adverts);
+    let (decoded, adverts) = (c.stats.decoded, c.stats.adverts + c.stats.notifications);
     CaptureResult { summary, errors, timeline: c.timeline, decoded, adverts }
 }
 
@@ -258,10 +259,11 @@ pub fn run(dir: &Path, accept_stable: bool) -> Report {
             errors.extend(r.errors);
             evidence += 1;
         }
-        if evidence == 0 {
-            errors.push(format!("table {table}: no capture and no vectors — every table ships with evidence"));
-        }
-        if captures.is_empty() {
+        if reg.drafts.contains(table) {
+            lines.push(format!("draft: table {table} is not verified by its owner yet (it is left out of the bundle apps get)"));
+        } else if evidence == 0 {
+            errors.push(format!("table {table}: no capture and no vectors — every table ships with evidence (or is marked `status: draft`)"));
+        } else if captures.is_empty() {
             lines.push(format!("note: table {table} has no real capture yet"));
         }
     }
@@ -434,6 +436,81 @@ mod tests {
         std::fs::write(&table, std::fs::read_to_string(&table).unwrap().replace("cadence: u16le[4] / 10", "cadence: u16le[4] / 5")).unwrap();
         let e = problems(&dir);
         assert!(e.iter().any(|e| e.contains("rider confirmed cadence=84") && e.contains("now decodes 168")), "{e:#?}");
+    }
+
+    /// A recording of a connected device, as the Studio writes it: header with the services found, then notifications.
+    fn connected_capture(name: &str, service: &str, chr: &str, packets: &[&str], extra: &[&str]) -> Vec<Line> {
+        let mut text = format!(
+            r#"{{"type":"header","format":"ofp-capture","version":1,"tool":"test","host":"test","started":"2026-01-01T00:00:00Z","device":{{"name":"{name}"}},"gatt":[{{"uuid":"{service}","characteristics":[{{"uuid":"{chr}","properties":["notify"]}}]}}]}}"#
+        );
+        text.push('\n');
+        for (i, p) in packets.iter().enumerate() {
+            text.push_str(&format!(r#"{{"type":"packet","t":{},"kind":"notify","chr":"{chr}","data":"{}"}}"#, 1000 + i * 1000, p.replace(' ', "")));
+            text.push('\n');
+        }
+        for l in extra {
+            text.push_str(l);
+            text.push('\n');
+        }
+        ofp_capture::read(text.as_bytes()).unwrap()
+    }
+
+    fn last_values(reg: &Registry, lines: &[Line]) -> (String, std::collections::BTreeMap<String, f64>) {
+        let r = check_lines(reg, None, "test", lines);
+        let d = r.timeline.iter().rev().find(|d| !d.stale).expect("something decoded");
+        (d.source_id.clone(), d.fields.clone())
+    }
+
+    #[test]
+    fn the_core_draft_decodes_a_notification_built_from_the_makers_specification() {
+        let reg = registry::load(&registry_dir()).unwrap();
+        assert!(reg.drafts.contains("core-body-temperature-connected"));
+        // flags: skin, reserved, quality, heart rate and heat strain valid; core 37.25, skin 33.10, HR 142, HSI 2.3
+        let lines = connected_capture("CORE 1234", "00002100-5b1e-4347-b07c-97b514dae121", "00002101-5b1e-4347-b07c-97b514dae121", &["37 8d0e ee0c 0000 24 8e 17"], &[]);
+        let (source, v) = last_values(&reg, &lines);
+        assert!(source.starts_with("core-body-temperature-connected:"));
+        assert_eq!((v["core_temperature"], v["skin_temperature"], v["heart_rate"], v["heat_strain_index"]), (37.25, 33.1, 142.0, 2.3));
+        // Fahrenheit (bit 3): 99.05 F is 37.25 C. No reading (0x7FFF) and invalid fields are left out.
+        let (_, v) = last_values(&reg, &connected_capture("CORE", "00002100-5b1e-4347-b07c-97b514dae121", "00002101-5b1e-4347-b07c-97b514dae121", &["08 b126 0000 0000 00 00 00"], &[]));
+        assert_eq!(v["core_temperature"], 37.25);
+        assert!(!v.contains_key("skin_temperature") && !v.contains_key("heart_rate"));
+        let r = check_lines(&reg, None, "test", &connected_capture("CORE", "00002100-5b1e-4347-b07c-97b514dae121", "00002101-5b1e-4347-b07c-97b514dae121", &["00 ff7f 0000 0000 00 00 00"], &[]));
+        assert!(r.timeline.iter().all(|d| !d.fields.contains_key("core_temperature")));
+    }
+
+    #[test]
+    fn the_tymewear_draft_decodes_a_breath_and_skips_the_other_packets() {
+        let reg = registry::load(&registry_dir()).unwrap();
+        // a breath: inhale 1.50 s, exhale 2.50 s, raw tidal volume 180 → 15 breaths/min, 1.80 L, 27 L/min
+        let breath = "01 10000000 9600 fa00 b400 b400 0000 0000";
+        let movement = "02 10000000 0000 0000 0000 0000";
+        let lines = connected_capture("TYME-1A2B", "40b50000-30b5-11e5-a151-feff819cdc90", "40b50004-30b5-11e5-a151-feff819cdc90", &[movement, breath, movement], &[]);
+        let r = check_lines(&reg, None, "test", &lines);
+        assert_eq!(r.decoded, 1, "only the breath packet");
+        let (source, v) = last_values(&reg, &lines);
+        assert!(source.starts_with("tymewear-vitalpro:"));
+        assert_eq!((v["breathing_rate"], v["tidal_volume"], v["minute_ventilation"]), (15.0, 1.8, 27.0));
+        // the strap's heart-rate pod is not this table's
+        let pod = connected_capture("TymeHR 55", "180d", "2a37", &["0048"], &[]);
+        assert_eq!(check_lines(&reg, None, "test", &pod).decoded, 0);
+    }
+
+    #[test]
+    fn an_owners_verdict_on_a_connected_sensor_is_held_to_like_any_other() {
+        let reg = registry::load(&registry_dir()).unwrap();
+        let wrong = r#"{"type":"confirm","t":1500,"source_id":"tymewear-vitalpro:live","field":"tidal_volume","shown":1.8,"console":0.9,"ok":false}"#;
+        let lines = connected_capture("TYME-1A2B", "40b50000-30b5-11e5-a151-feff819cdc90", "40b50004-30b5-11e5-a151-feff819cdc90", &["01 10000000 9600 fa00 b400 b400 0000 0000"], &[wrong]);
+        let r = check_lines(&reg, None, "test", &lines);
+        assert!(r.errors.iter().any(|e| e.contains("marked tidal_volume wrong") && e.contains("console showed 0.9")), "{:#?}", r.errors);
+    }
+
+    #[test]
+    fn drafts_are_left_out_of_the_bundle_apps_get() {
+        let reg = registry::load(&registry_dir()).unwrap();
+        let bundle: ofp_core::Bundle = serde_json::from_str(&reg.bundle_json()).unwrap();
+        assert!(bundle.tables.iter().any(|t| t.id == "keiser-m3i"));
+        assert!(bundle.tables.iter().all(|t| !reg.drafts.contains(&t.id)));
+        assert!(reg.bundle.tables.len() > bundle.tables.len(), "the Studio still loads them");
     }
 
     #[test]

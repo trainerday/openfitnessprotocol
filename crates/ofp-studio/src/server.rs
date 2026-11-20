@@ -143,6 +143,9 @@ pub fn router(studio: Arc<Studio>, radio: mpsc::UnboundedSender<Radio>, has_radi
         .route(
             "/api/session",
             post(|State(a): State<App>, Json(r): Json<SessionReq>| async move {
+                // Choosing a device (or a file) ends whatever was being recorded
+                let _ = a.radio.send(Radio::Disconnect);
+                let _ = a.studio.record_stop();
                 reply(match (r.device_id, r.capture) {
                     (Some(id), _) => a.studio.open_device(&id),
                     (None, Some(path)) => a.studio.open_capture(&path),

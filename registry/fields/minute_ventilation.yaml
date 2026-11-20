@@ -1,0 +1,13 @@
+id: 15
+key: minute_ventilation
+name: Minute ventilation
+unit: L/min
+type: decimal
+decimals: 1
+min: 0
+max: 400
+kind: instantaneous
+tier: experimental
+tolerance: { abs: 5, pct: 15 }
+description: >
+  Air breathed per minute right now, in litres per minute: breathing rate times tidal volume.

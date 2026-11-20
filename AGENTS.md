@@ -63,6 +63,17 @@ spec in this session, and tell the person that the table must be written in a fr
 is given only the spec. If you have already read the other project's code in this session, you are
 the spec-writing session, not the table-writing one.
 
+## Starting a table for a device you do not have
+
+A table may be started from documentation alone, for its owner to try: `status: draft`.
+
+- A draft needs no recording. It is listed and decoded in the Studio, and **left out of the bundle
+  apps get**: riders never meet an unverified table.
+- Say in a comment what is uncertain ("TO CHECK ON A SENSOR: …"). The owner's answers in the
+  Studio's Live step (right / wrong, and what they saw) are how it gets settled.
+- It becomes `experimental` when a real recording with the owner's confirmations is added and
+  `ofp check` passes with it.
+
 ## What must ship with a table
 
 - **A real capture** (`<table>.capture.jsonl`, format in `docs/capture-format.md`) of the device in

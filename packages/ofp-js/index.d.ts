@@ -20,6 +20,16 @@ export interface OfpDevice {
   instance?: number
   instanceLabel?: string
   fields: OfpField[]
+  /** Read over a connection: when it comes into use, `on.connect` asks the app to connect and subscribe. */
+  connectable: boolean
+}
+
+/** What the app's Bluetooth has to do for a connectable device. */
+export interface OfpConnectRequest {
+  id: string
+  /** The app's own id for the device (what it passed as `deviceId` in the advertisement). */
+  deviceId: string
+  subscribe: Array<{ service: string; characteristic: string }>
 }
 
 export interface OfpBasic {
@@ -64,6 +74,10 @@ export interface OfpOptions {
     /** A device in use stayed silent for `lostAfterMs`. It is used again by itself if remembered. */
     lost?: (id: string) => void
     silent?: (id: string) => void
+    /** Connect to the device and subscribe to these characteristics; then call `connected` and pass their notifications to `notification`. */
+    connect?: (request: OfpConnectRequest) => void
+    /** The device is no longer in use: the connection is not needed for it. */
+    disconnect?: (request: { id: string; deviceId: string }) => void
     /** Once a minute for a device in use: how well the radio hears it. */
     radio?: (stats: { id: string; packets: number; longestGapMs: number; rssi?: number }) => void
     error?: (error: unknown) => void
@@ -83,6 +97,8 @@ export interface OfpAdvertisement {
   rssi?: number | null
   /** Raw manufacturer data, company id first: bytes, or hex text. */
   manufacturerData?: Uint8Array | number[] | string | null
+  /** Service UUIDs the device advertises (how devices that are connected to are recognised). */
+  services?: string[]
 }
 
 export class Ofp {
@@ -91,6 +107,9 @@ export class Ofp {
   /** Bluetooth company ids the registry's tables match on. */
   readonly companyIds: number[]
   advertisement(a: OfpAdvertisement): void
+  connected(deviceId: string): void
+  disconnected(deviceId: string): void
+  notification(deviceId: string, characteristic: string, bytes: Uint8Array | number[] | string): void
   use(id: string): boolean
   release(id: string): void
   isInUse(id: string): boolean

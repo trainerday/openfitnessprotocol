@@ -92,3 +92,4 @@ button.yes { border-color: var(--good); color: var(--good); }
 button.no { border-color: var(--bad); color: var(--bad); }
 .verdict.good { color: var(--good); } .verdict.bad { color: var(--bad); }
 a.btn { text-decoration: none; display: inline-block; }
+.tile .desc { font-size: 12px; min-height: 30px; margin-top: 4px; }

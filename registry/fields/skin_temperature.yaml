@@ -1,0 +1,13 @@
+id: 11
+key: skin_temperature
+name: Skin temperature
+unit: "°C"
+type: decimal
+decimals: 2
+min: 5
+max: 45
+kind: instantaneous
+tier: experimental
+tolerance: { abs: 0.5, pct: 0 }
+description: >
+  Temperature of the skin under the sensor right now, in degrees Celsius.

@@ -207,8 +207,9 @@ ofp.use(id)                                                // the rider picked i
 Status: two apps use it, both unreleased branches of TrainerDay's own: the desktop app (Electron,
 the core as WebAssembly) and the Android app (React Native, where there is no WebAssembly, so the
 same core runs as plain JavaScript). In both, the wiring is one small file. What works today is
-broadcast devices that fill the usual places (power, cadence). The list of services is passed in
-but not acted on yet, and the "Extras" devices and connect-type devices are designed, not built.
+broadcast devices that fill the usual places (power, cadence). The core can also read devices that
+are connected to, and the Studio uses that; the two apps do not yet. The list of services is passed
+in but not acted on, and the "Extras" devices are designed, not built.
 The [design document](docs/design.md) has the details.
 
 ## Add your own device: a vibecoder-first project
@@ -254,9 +255,22 @@ noted and confirmed, it is right, whoever or whatever typed the table.
 ### Where your device then works
 
 In every app that includes OFP, with no change to that app. Today that is an unreleased branch of
-the TrainerDay desktop app; the project is new. Devices that send their numbers in their Bluetooth
-broadcast work now. Devices you have to connect to can be recorded and explored in the Studio
-today; saving a table for them needs a reader the core does not have yet.
+the TrainerDay desktop app; the project is new. Tables can be written for devices that send their numbers in
+their Bluetooth broadcast and for devices you connect to that simply notify. In the two apps, only
+the broadcast kind is wired in so far.
+
+## Devices in the registry
+
+| Device | How it is read | State |
+|---|---|---|
+| Keiser M3i indoor bike | broadcast | checked against a real ride |
+| CORE body temperature sensor | broadcast (core temperature) | **draft**, from the maker's published notes; not tried on a sensor |
+| CORE body temperature sensor | connected (core and skin temperature, heart rate, heat strain) | **draft**, from the maker's published specification |
+| Tymewear VitalPro breathing sensor | connected (breathing rate, tidal volume, ventilation) | **draft**, from others' published findings ([facts](registry/tables/tymewear-vitalpro.spec.md)) |
+
+Own one of the drafts' devices? Run `npm start`, pick the device, open **Live**, and say for each value
+whether it is right. That is what turns a draft into a verified table. If something is wrong, the
+recording you download holds what an assistant needs to fix it.
 
 ## Contributing
 

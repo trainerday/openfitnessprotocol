@@ -1,0 +1,13 @@
+id: 10
+key: core_temperature
+name: Core body temperature
+unit: "°C"
+type: decimal
+decimals: 2
+min: 25
+max: 45
+kind: instantaneous
+tier: experimental
+tolerance: { abs: 0.2, pct: 0 }
+description: >
+  Temperature inside the body right now, in degrees Celsius, as a sensor estimates it.

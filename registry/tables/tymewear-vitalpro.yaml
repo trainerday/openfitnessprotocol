@@ -1,0 +1,46 @@
+id: tymewear-vitalpro
+name: Tymewear VitalPro breathing sensor
+reader: notify
+version: 1
+# Draft: written from a description of the protocol, not yet tried on a sensor.
+status: draft
+
+provenance: >
+  Facts in tymewear-vitalpro.spec.md, which were learned from studying the open-source readers
+  k-breathe and Tyme4All (MIT). This table was written from that description only, not from their
+  code. The maker has published no specification.
+verified_on:
+  - not verified on a sensor yet
+
+# The breathing sensor of the chest strap ("TYME-xxxx"). The strap's heart-rate pod ("TymeHR …") is a
+# separate, ordinary heart-rate monitor and needs no table.
+match:
+  - name_prefix: TYME-
+  - name_prefix: VitalPro
+
+notify:
+  service: 40b50000-30b5-11e5-a151-feff819cdc90
+  characteristic: 40b50004-30b5-11e5-a151-feff819cdc90
+  min_length: 17
+
+# Several kinds of packet arrive on this characteristic; byte 0 says which. Kind 1 is one breath:
+#   1-4    time stamp, 40 ms ticks
+#   5-6    inhale duration, hundredths of a second
+#   7-8    exhale duration, hundredths of a second
+#   9-10   tidal volume, raw
+only_when: u8[0] == 1
+
+# One packet per breath, every 2 to 4 seconds at rest: silent only after several missed breaths.
+stale_after_ms: 20000
+
+fields:
+  # From the length of this breath. (The readers this was learned from prefer the time between two
+  # packets; a table reads one packet at a time, so it uses the durations inside it.)
+  breathing_rate:
+    value: 6000 / (u16le[5] + u16le[7])
+    only_when: u16le[5] + u16le[7] > 0
+  # The scale (x 0.01) was found by others by comparing with the maker's own files: approximate.
+  tidal_volume: u16le[9] / 100
+  minute_ventilation:
+    value: 60 * u16le[9] / (u16le[5] + u16le[7])
+    only_when: u16le[5] + u16le[7] > 0

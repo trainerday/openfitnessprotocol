@@ -1,7 +1,7 @@
 //! Reads the registry (fields and tables as YAML) and compiles it into the bundle the core loads.
 
 use crate::exprparse;
-use ofp_core::{Bundle, Expr, FieldDef, FieldType, Instance, MatchRule, SampleKind, Table, TableField, Tier, BUNDLE_VERSION};
+use ofp_core::{Bundle, Expr, FieldDef, FieldType, Instance, MatchRule, NotifySpec, SampleKind, Table, TableField, Tier, BUNDLE_VERSION};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -50,9 +50,22 @@ struct MatchSrc {
     manufacturer_id: Option<u16>,
     #[serde(default)]
     name_prefix: Option<String>,
+    /// A service the device advertises (notify tables).
+    #[serde(default)]
+    service: Option<String>,
+    #[serde(default)]
     min_length: usize,
     #[serde(default)]
     when: Option<String>,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+struct NotifySrc {
+    service: String,
+    characteristic: String,
+    #[serde(default)]
+    min_length: usize,
 }
 
 #[derive(Deserialize, Debug)]
@@ -79,6 +92,8 @@ struct TableSrc {
     only_when: Option<String>,
     #[serde(default)]
     instance: Option<InstanceSrc>,
+    #[serde(default)]
+    notify: Option<NotifySrc>,
     stale_after_ms: u64,
     fields: serde_yaml_ng::Mapping,
 }
@@ -105,10 +120,18 @@ pub struct Lock {
     pub retired_ids: Vec<u32>,
 }
 
+thread_local! {
+    /// Ids of draft tables seen while compiling (filled by `compile_table`, read by `load`).
+    static DRAFTS: std::cell::RefCell<BTreeSet<String>> = const { std::cell::RefCell::new(BTreeSet::new()) };
+}
+
 pub struct Registry {
     pub bundle: Bundle,
     pub tolerances: BTreeMap<String, Tolerance>,
     pub descriptions: BTreeMap<String, String>,
+    /// Tables started without the device in hand: not verified by a capture yet, and left out of the
+    /// bundle apps get.
+    pub drafts: BTreeSet<String>,
 }
 
 fn key_ok(s: &str) -> bool {
@@ -231,6 +254,7 @@ pub fn load(dir: &Path) -> Result<Registry, Vec<String>> {
     }
 
     let known: BTreeSet<String> = fields.iter().map(|f| f.key.clone()).collect();
+    DRAFTS.with(|d| d.borrow_mut().clear());
     let mut tables: Vec<Table> = Vec::new();
     match yaml_files(&dir.join("tables")) {
         Err(e) => errors.push(e),
@@ -263,7 +287,8 @@ pub fn load(dir: &Path) -> Result<Registry, Vec<String>> {
     if let Err(e) = ofp_core::Core::from_bundle(bundle.clone()) {
         return Err(vec![e]);
     }
-    Ok(Registry { bundle, tolerances, descriptions })
+    let drafts = DRAFTS.with(|d| d.borrow().clone());
+    Ok(Registry { bundle, tolerances, descriptions, drafts })
 }
 
 /// Compile one table from its YAML text. `stem` is the file name without `.yaml`, when it comes from a
@@ -292,11 +317,14 @@ pub fn compile_table(text: &str, shown: &str, stem: Option<&str>, known: &BTreeS
     if stem.is_some_and(|s| s != t.id) {
         errors.push(format!("{shown}: the file must be named {}.yaml", t.id));
     }
-    if t.reader != "broadcast" {
-        errors.push(format!("{shown}: reader '{}' does not exist (readers: broadcast)", t.reader));
+    if t.reader != "broadcast" && t.reader != "notify" {
+        errors.push(format!("{shown}: reader '{}' does not exist (readers: broadcast, notify)", t.reader));
     }
-    if t.status != "experimental" && t.status != "stable" {
-        errors.push(format!("{shown}: status must be experimental or stable"));
+    if (t.reader == "notify") != t.notify.is_some() {
+        errors.push(format!("{shown}: `notify:` (service and characteristic) goes with `reader: notify`, and only with it"));
+    }
+    if !matches!(t.status.as_str(), "draft" | "experimental" | "stable") {
+        errors.push(format!("{shown}: status must be draft, experimental or stable"));
     }
     if t.provenance.trim().is_empty() {
         errors.push(format!("{shown}: provenance is required: say where the knowledge of this device comes from"));
@@ -315,11 +343,24 @@ pub fn compile_table(text: &str, shown: &str, stem: Option<&str>, known: &BTreeS
     }
     let mut matches = Vec::new();
     for (i, m) in t.matches.iter().enumerate() {
-        if m.manufacturer_id.is_none() && m.name_prefix.as_deref().map_or(true, |n| n.trim().is_empty()) {
-            errors.push(format!("{shown}: match rule {}: a rule without manufacturer_id needs name_prefix", i + 1));
+        let named = m.name_prefix.as_deref().is_some_and(|n| !n.trim().is_empty());
+        if t.reader == "notify" {
+            if m.manufacturer_id.is_none() && !named && m.service.is_none() {
+                errors.push(format!("{shown}: match rule {}: give a name_prefix, a manufacturer_id or an advertised service", i + 1));
+            }
+            if m.when.is_some() {
+                errors.push(format!("{shown}: match rule {}: `when` reads a broadcast payload and has no meaning in a notify table", i + 1));
+            }
+        } else {
+            if m.manufacturer_id.is_none() && !named {
+                errors.push(format!("{shown}: match rule {}: a rule without manufacturer_id needs name_prefix", i + 1));
+            }
+            if m.service.is_some() {
+                errors.push(format!("{shown}: match rule {}: `service` is for notify tables", i + 1));
+            }
         }
         let when = m.when.as_deref().and_then(|w| expr(&format!("match rule {} when", i + 1), w, errors));
-        matches.push(MatchRule { manufacturer_id: m.manufacturer_id, name_prefix: m.name_prefix.clone(), min_length: m.min_length, when });
+        matches.push(MatchRule { manufacturer_id: m.manufacturer_id, name_prefix: m.name_prefix.clone(), service: m.service.clone(), min_length: m.min_length, when });
     }
     let only_when = t.only_when.as_deref().and_then(|w| expr("only_when", w, errors));
     let instance = t.instance.as_ref().and_then(|i| expr("instance", &i.value, errors).map(|value| Instance { label: i.label.clone(), value }));
@@ -357,7 +398,11 @@ pub fn compile_table(text: &str, shown: &str, stem: Option<&str>, known: &BTreeS
         }
     }
     if errors.len() == before {
-        Some(Table { id: t.id, name: t.name, reader: t.reader, version: t.version, matches, only_when, instance, stale_after_ms: t.stale_after_ms, fields: tfields })
+        let notify = t.notify.map(|n| NotifySpec { service: n.service, characteristic: n.characteristic, min_length: n.min_length });
+        if t.status == "draft" {
+            DRAFTS.with(|d| d.borrow_mut().insert(t.id.clone()));
+        }
+        Some(Table { id: t.id, name: t.name, reader: t.reader, version: t.version, matches, notify, only_when, instance, stale_after_ms: t.stale_after_ms, fields: tfields })
     } else {
         None
     }
@@ -378,14 +423,18 @@ impl Registry {
             Some(table) if errors.is_empty() => {
                 let bundle = Bundle { version: BUNDLE_VERSION, fields: self.bundle.fields.clone(), tables: vec![table] };
                 ofp_core::Core::from_bundle(bundle.clone()).map_err(|e| vec![e])?;
-                Ok(Registry { bundle, tolerances: self.tolerances.clone(), descriptions: self.descriptions.clone() })
+                Ok(Registry { bundle, tolerances: self.tolerances.clone(), descriptions: self.descriptions.clone(), drafts: BTreeSet::new() })
             }
             _ => Err(errors),
         }
     }
 
+    /// The bundle apps get: every table that is verified. Drafts are for their owners to try in the
+    /// Studio, not for riders.
     pub fn bundle_json(&self) -> String {
-        serde_json::to_string(&self.bundle).expect("bundle serializes")
+        let mut bundle = self.bundle.clone();
+        bundle.tables.retain(|t| !self.drafts.contains(&t.id));
+        serde_json::to_string(&bundle).expect("bundle serializes")
     }
 
     pub fn core(&self) -> ofp_core::Core {

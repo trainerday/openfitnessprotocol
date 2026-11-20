@@ -71,9 +71,23 @@ pub struct Table {
     /// The value that tells two identical devices apart (a bike number).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instance: Option<Instance>,
+    /// `reader: notify`: the characteristic whose notifications this table decodes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notify: Option<NotifySpec>,
     /// After this long without a packet, instantaneous values read as zero.
     pub stale_after_ms: u64,
     pub fields: Vec<TableField>,
+}
+
+/// Where a connected device sends what a `notify` table reads. UUIDs as text, any case, with or
+/// without dashes; the 16-bit standard ones may be written short (`2a37`).
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct NotifySpec {
+    pub service: String,
+    pub characteristic: String,
+    /// Shortest notification this table accepts.
+    #[serde(default)]
+    pub min_length: usize,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -84,7 +98,11 @@ pub struct MatchRule {
     pub manufacturer_id: Option<u16>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name_prefix: Option<String>,
+    /// A service the device advertises (for devices that are connected to).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service: Option<String>,
     /// Shortest payload (after the company id) this rule accepts.
+    #[serde(default)]
     pub min_length: usize,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub when: Option<Expr>,

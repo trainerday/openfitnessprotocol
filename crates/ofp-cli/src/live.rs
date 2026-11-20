@@ -478,7 +478,7 @@ pub fn live(reg: Registry, want_source: Option<String>, output: Option<PathBuf>,
                 adv = scanner.next() => {
                     let Some(adv) = adv else { break };
                     let now = Instant::now();
-                    let messages = core.on_advertisement(&Advertisement { device_id: &adv.device_id, name: adv.name.as_deref(), rssi: adv.rssi, manufacturer_data: &adv.mfr, now_ms: t(now) });
+                    let messages = core.on_advertisement(&Advertisement { device_id: &adv.device_id, name: adv.name.as_deref(), rssi: adv.rssi, manufacturer_data: &adv.mfr, services: &adv.services, now_ms: t(now) });
                     let mut ours = s.device_id.as_deref() == Some(adv.device_id.as_str());
                     for m in messages {
                         match m {

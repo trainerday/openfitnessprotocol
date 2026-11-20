@@ -215,8 +215,8 @@ function viewDevices() {
     h('p', { class: 'hint' }, 'Everything the radio hears. Wake your device (pedal, press a button) and it shows up within a few seconds.'),
     h('div', { class: 'scroll' }, h('table', { id: 'devices-table' })),
   ));
-  const caps = h('div', { class: 'panel' }, h('h2', {}, 'Or open a capture'), h('p', { class: 'hint' }, 'A recording made earlier, by this page or by `ofp record`. Works without a radio.'));
-  if (!S.captures.length) caps.append(h('p', { class: 'muted' }, 'No captures yet.'));
+  const caps = h('div', { class: 'panel' }, h('h2', {}, 'Earlier recordings'), h('p', { class: 'hint' }, 'Every time you use a device it is recorded into its own file. Open one to look at it again, or to send it to someone.'));
+  if (!S.captures.length) caps.append(h('p', { class: 'muted' }, 'None yet.'));
   // A recording someone sent you (they made it with this page and "Download the recording")
   const pick = h('input', { type: 'file', accept: '.jsonl,.txt', onchange: guard(async (e) => {
     const file = e.target.files[0];
@@ -228,7 +228,7 @@ function viewDevices() {
   caps.append(h('div', { class: 'row', style: 'margin-bottom:10px' }, h('b', {}, 'A file someone sent you:'), pick));
   const list = h('ul', { class: 'list' });
   for (const c of S.captures) {
-    list.append(h('li', {}, h('span', { class: 'mono fill' }, c.name), h('span', { class: 'badge' }, c.place),
+    list.append(h('li', {}, h('span', { class: 'mono fill' }, c.name), h('span', { class: 'muted' }, c.kb + ' KB'), c.place === 'registry' ? h('span', { class: 'badge' }, 'ships with a table') : null,
       h('button', { class: 'small', onclick: guard(async () => { await api('/api/session', { capture: c.path }); setTab('map'); }) }, 'Open')));
   }
   caps.append(list);
@@ -265,9 +265,15 @@ function renderDevicesTable() {
     let row = deviceRows.get(d.device_id);
     if (!row) {
       // The chosen device keeps its button: "Open" goes back to it without starting over
+      // One click: choose it, start recording, show its values. (Whether it has to be connected to is
+      // worked out from what it advertises.)
       const use = h('button', { class: 'small primary', onclick: guard(async () => {
-        if (!(session() && session().device_id === d.device_id)) await api('/api/session', { device_id: d.device_id });
-        setTab('record');
+        if (!(session() && session().device_id === d.device_id)) {
+          await api('/api/session', { device_id: d.device_id });
+          await api('/api/record/start', {});
+          await loadState();
+        }
+        setTab('live');
       }) }, 'Use');
       row = h('tr', {}, h('td', {}), h('td', { class: 'muted' }), h('td', { class: 'num' }), h('td', { class: 'num' }), h('td', { class: 'num' }), h('td', {}, use, h('span', { class: 'badge', hidden: true }, 'chosen')));
       deviceRows.set(d.device_id, row);
@@ -283,6 +289,7 @@ function renderDevicesTable() {
     if (d.services.length) sends.push('services ' + d.services.map((u) => (u.length > 8 ? u.slice(0, 8) + '…' : u)).join(' '));
     const set = (cell, text) => { if (cell.textContent !== text) cell.textContent = text; };
     const name = (d.name || '(no name)') + (d.known ? '  ·  ' + d.known : '');
+    row.cells[0].title = d.known ? 'A table in the registry reads this device' : '';
     set(row.cells[0], name);
     row.cells[0].className = d.name ? '' : 'muted';
     set(row.cells[1], sends.join(' · ') || '–');
@@ -385,13 +392,12 @@ function viewRecord() {
   const wrap = h('div', {});
   const toggle = s.recording
     ? h('button', { class: 'danger', onclick: guard(async () => { await api('/api/record/stop', {}); await reload(); }) }, 'Stop recording')
-    : h('button', { class: 'primary', disabled: s.from_file, onclick: guard(async () => { await api('/api/record/start', { connect: $('#connect') ? $('#connect').checked : undefined }); await loadState(); render(); }) }, 'Start recording');
+    : h('button', { class: 'primary', disabled: s.from_file, onclick: guard(async () => { await api('/api/record/start', {}); await reload(); }) }, 'Record again (a new file)');
   wrap.append(h('div', { class: 'panel' },
     h('h2', {}, 'Record ' + s.name),
     h('p', { class: 'hint' }, s.from_file ? 'This is a capture file: it can be read and mapped, not recorded into. Choose the device in Devices to record more.'
       : 'Use the device as you normally would while this records: change effort, speed, gear, whatever it measures.'),
-    h('div', { class: 'row' }, toggle,
-      s.from_file ? null : h('label', { style: 'margin:0', class: 'row' }, h('input', { type: 'checkbox', id: 'connect', checked: s.connect, disabled: s.recording }), 'Connect to it (for a device that sends nothing in its adverts)')),
+    h('div', { class: 'row' }, toggle),
     h('div', { class: 'stats', id: 'rec-stats' }),
     s.file ? h('div', { class: 'muted mono' }, s.file) : null,
   ));
@@ -446,7 +452,7 @@ function design() {
 }
 
 const saveDesign = guard(async (d) => {
-  await api('/api/table/design', d);
+  await api('/api/table/design', { ...d, stream: S.stream });
   S.checked = null;
 });
 
@@ -661,8 +667,11 @@ function liveGroups() {
   const groups = [];
   const src = S.live.source;
   if (src) {
+    const table = ((S.state && S.state.registry.tables) || []).find((t) => t.id === src.table);
+    const isDraft = table && table.draft && !(session() && session().draft);
     groups.push({
-      id: 'ofp', title: src.name, hint: `OFP table “${src.table}” (version ${src.table_version})`,
+      id: 'ofp', title: src.name,
+      hint: `OFP table “${src.table}” (version ${src.table_version})` + (isDraft ? ' · DRAFT: written from documentation, never tried on this device. Your answers below are what verifies it.' : ''),
       tiles: src.fields.map((f) => ({ id: 'ofp:' + f.key, proto: 'ofp', key: f.key, f, value: S.live.values[f.key], stale: S.live.stale })),
     });
   }
@@ -745,6 +754,7 @@ function renderTiles() {
           h('select', { class: 'small', onchange: (e) => setDisplayMode(t.f.key, e.target.value) },
             [['number', 'Big number'], ['dial', 'Dial'], ['text', 'Text']].map(([v, l]) => h('option', { value: v, selected: displayMode(t.f.key) === v }, l)))),
         h('div', { class: 'show' }),
+        h('div', { class: 'desc muted' }, (fieldOf(t.key) && fieldOf(t.key).description) || ''),
         h('div', { class: 'verdict' }),
         h('div', { class: 'row' },
           h('button', { class: 'small yes', onclick: () => sayRight(currentTile(t.id)) }, 'Yes, this is right'),
@@ -784,8 +794,8 @@ function viewLive() {
     h('p', { class: 'hint' }, 'What the device is sending right now, grouped by what reads it. Use the device normally and look at its own display: for each value, is this right? You do not need to match an exact number, they move. ',
       'If something is wrong, say so here and then tell your assistant what you saw.'));
   if (s.from_file) head.append(h('p', { class: 'problem' }, 'This is a capture file. Live values need the device: choose it in Devices.'));
-  else if (!s.recording) head.append(h('button', { class: 'primary', onclick: guard(async () => { await api('/api/record/start', {}); await loadState(); render(); }) }, 'Start'));
-  else head.append(h('div', { class: 'row' }, h('span', { class: 'dot rec' }), h('span', {}, 'Recording what the device sends'), h('button', { class: 'small', onclick: guard(async () => { await api('/api/record/stop', {}); await reload(); }) }, 'Stop'),
+  else if (!s.recording) head.append(h('div', { class: 'row' }, h('span', { class: 'muted' }, 'Stopped.'), h('button', { class: 'primary', onclick: guard(async () => { await api('/api/record/start', {}); await reload(); }) }, 'Start again (a new recording)')));
+  else head.append(h('div', { class: 'row' }, h('span', { class: 'dot rec' }), h('span', {}, 'Recording what the device sends'), h('button', { class: 'danger', onclick: guard(async () => { await api('/api/record/stop', {}); await reload(); }) }, 'Stop'),
     h('button', { class: 'small ghost', onclick: () => setTab('save') }, 'Check and save →')));
   if (S.capture && S.capture.packets.length) {
     head.append(h('div', { class: 'row', style: 'margin-top:12px' },
