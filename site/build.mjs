@@ -100,7 +100,7 @@ function home(latest) {
 
 <section class="card spotlight">
   <h2>Got a device that doesn't work?</h2>
-  <p>Install OFP Studio and test it: wake the device, click <b>Use</b>, and see what it sends. Then give the recording and this project to an AI assistant (Claude, ChatGPT, any that can read code), and it can set the device up for you. You check the numbers against the device's own display, and send it in.</p>
+  <p>Install OFP Studio and test it: wake the device, click <b>${latest && !simpleStudio(latest.version) ? 'Use' : 'Connect'}</b>, and see what it sends. Then give the recording and this project to an AI assistant (Claude, ChatGPT, any that can read code), and it can set the device up for you. You check the numbers against the device's own display, and send it in.</p>
   <div class="actions">${studio}</div>
   <div class="shots">
     <a href="/images/studio-connect.png" class="shot-link" data-shot><img class="shot" src="/images/studio-connect.png" width="1030" height="567" alt="OFP Studio, step 1: the Bluetooth devices nearby, each with a Connect button and what OFP reads it as"><span>1 · Connect your Bluetooth device</span></a>

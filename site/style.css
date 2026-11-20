@@ -39,7 +39,7 @@ h3 { font-size: 18px; margin: 0 0 8px; }
 .card p { margin: 0 0 14px; color: var(--muted); }
 .card p:last-child { margin-bottom: 0; }
 
-.flow { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; counter-reset: step; }
+.flow { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; counter-reset: step; }
 .flow div { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; font-size: 15px; color: var(--muted); }
 .flow div::before { counter-increment: step; content: counter(step); display: block; font-weight: 700; color: var(--accent); margin-bottom: 4px; }
 .flow b { color: var(--text); }
