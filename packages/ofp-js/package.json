@@ -6,9 +6,16 @@
   "type": "module",
   "main": "index.js",
   "types": "index.d.ts",
-  "files": ["index.js", "index.d.ts", "adapters"],
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "adapters"
+  ],
   "exports": {
-    ".": { "types": "./index.d.ts", "default": "./index.js" },
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
     "./adapters/noble": "./adapters/noble.js",
     "./adapters/react-native-ble-manager": "./adapters/react-native-ble-manager.js"
   },

@@ -7,7 +7,7 @@ How to write it: one line per thing a user would notice, new things first, at mo
 fixes are folded into a last "Bug fixes and improvements". Notes for the next release go under `## Next`;
 `scripts/release.sh` turns that heading into the version and date.
 
-## Next
+## 0.1.0 (2026-11-20)
 
 - OFP Studio as an app for the Mac, with its own window: no browser or terminal needed.
 - Devices: the ones something can read come first, fitness devices nothing reads yet are listed below
