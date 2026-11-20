@@ -10,8 +10,10 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 Remove-Item -Recurse -Force target\release\bundle\nsis -ErrorAction SilentlyContinue
 $extra = @()
 if ($Endpoint -and $Account -and $Profile) {
+  # Tauri splits the command on spaces and passes quotes through: the path must have no spaces
   $sign = (Resolve-Path scripts\sign-windows.ps1).Path
-  $config = @{ bundle = @{ windows = @{ signCommand = "powershell -NoProfile -ExecutionPolicy Bypass -File `"$sign`" -Endpoint $Endpoint -Account $Account -Profile $Profile %1" } } } | ConvertTo-Json -Depth 5 -Compress
+  if ($sign -match ' ') { throw "The repository path has a space ($sign): signing cannot be called from it" }
+  $config = @{ bundle = @{ windows = @{ signCommand = "powershell -NoProfile -ExecutionPolicy Bypass -File $sign -Endpoint $Endpoint -Account $Account -Profile $Profile %1" } } } | ConvertTo-Json -Depth 5 -Compress
   $file = Join-Path $env:TEMP 'ofp-windows-sign.json'
   Set-Content -Path $file -Value $config -Encoding ascii
   $extra = @('--config', $file)
