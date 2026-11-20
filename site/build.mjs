@@ -80,7 +80,7 @@ function home(latest) {
     body: `
 <div class="hero">
   <h1>One library to read every fitness device.</h1>
-  <p class="lead">Add OFP to your app once. You don't maintain code for each device: the community does. A new device is a small data file, and it reaches your app when you update the library.</p>
+  <p class="lead">Add OFP to your app once. You don't maintain code for each device: the community does. New devices come to your app with a simple library update: no code of yours changes.</p>
   <div class="actions"><a class="button quiet" href="${REPO}/blob/main/docs/integrating.md">Add OFP to your app</a></div>
 </div>
 
