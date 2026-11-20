@@ -3,38 +3,58 @@
 **One open way for any fitness device to talk to any fitness app — with rules that live in a git
 repo, not in a committee.**
 
-### Test your device now: no code needed
+## Start here
 
-**[Download OFP Studio](https://openfitnessprotocol.org/download)**, a free app for Mac and Windows. Wake your
-device, click **Use**, and see what it sends. If nothing reads it yet, save the recording and give it, with
-this project, to an AI assistant: it can set the device up for you.
+| You have… | Do this |
+|---|---|
+| **A fitness device** | **[Download OFP Studio](https://openfitnessprotocol.org/download)**, free for Mac and Windows. Connect your Bluetooth device, check that its numbers look right, and send it to us with one button. No code. |
+| **A fitness app** | `npm install @openfitnessprotocol/ofp`. One library for any JavaScript app (Electron, Node, React Native, the web): the core, the device tables, and four hooks to your app's own Bluetooth. [Quick start](https://openfitnessprotocol.org/developers) · [guide](docs/integrating.md) · [npm](https://www.npmjs.com/package/@openfitnessprotocol/ofp) |
 
 <table><tr>
 <td width="50%"><img src="docs/images/studio-connect.png" alt="OFP Studio, step 1: the Bluetooth devices nearby, each with a Connect button"><br><sub>1 · Connect your Bluetooth device</sub></td>
 <td width="50%"><img src="docs/images/studio-check.png" alt="OFP Studio, step 2: the device's numbers, each with Looks right or Looks wrong"><br><sub>2 · Check your numbers, then send</sub></td>
 </tr></table>
 
-**OFP reads data; it does not control devices.**
+**OFP reads fitness data; it does not control devices.** It reads a Concept2 rower, a power meter, a heart
+rate strap, a bike that only broadcasts its numbers. It does not set a trainer's resistance or ERG mode, or a
+treadmill's speed: your app keeps doing that the way it does now. Control may come later.
 
-- ✅ **Reading fitness data: yes.** a Concept2 rower, a power meter, a heart rate strap, a bike that only broadcasts its numbers, a
-  breathing or temperature sensor, a smart trainer's power and cadence.
-- ❌ **Controlling fitness devices: no.** setting a trainer's resistance or ERG mode (a Wahoo KICKR is read, not steered), or a
-  treadmill's speed. Control may come later.
+## Devices
 
-> **Status: first version.** The core, the `ofp` command and one device (the Keiser M3i) work.
-> Everything can still change until 1.0. The details are in the [design document](docs/design.md).
+✅ **Verified device types** (each type checked on a real device, not every model):
 
+| Device | What OFP reads |
+|---|---|
+| Heart rate straps (the Bluetooth Heart Rate standard: Garmin, Polar and others) | heart rate, RR intervals (HRV) |
+| Power meters (the Bluetooth Cycling Power standard) | power, cadence |
+| Speed and cadence sensors (the Bluetooth standard) | speed, cadence |
+| Spin bikes and indoor bikes with the Bluetooth fitness machine standard (FTMS): Schwinn IC4 / Bowflex C6, Stages, newer Yesoul and Domyos bikes, and many more | power, cadence, speed, distance, resistance, heart rate |
+| Keiser M3i indoor bike | power, cadence, heart rate, gear, energy, distance, time |
+| Rowers with FTMS (Concept2 and others) | stroke rate, stroke count, power, distance |
+| Treadmills with FTMS | speed, incline, distance |
 
-### Use it in your app
+**Smart trainers** (Wahoo KICKR, Tacx, Elite, Saris, Wattbike and others) are read too, power and cadence,
+but **read only**: OFP does not set their resistance or ERG mode. Your app keeps controlling them the way it
+does now, so there is usually little reason to read them through OFP.
 
-```sh
-npm install @openfitnessprotocol/ofp
-```
+☑️ **Supported, not yet verified** (OFP reads them, from published specifications or other projects'
+findings; no owner has checked one in OFP Studio yet):
 
-One library for any JavaScript app (Electron, Node, React Native, the web): the core, the device tables,
-and four hooks to wire to your app's own Bluetooth. Details on the
-[package page](https://www.npmjs.com/package/@openfitnessprotocol/ofp) and in
-[docs/integrating.md](docs/integrating.md).
+| Device | What OFP reads |
+|---|---|
+| Running speed and cadence sensors (the Bluetooth standard) | speed, running cadence |
+| CORE body temperature sensor | core and skin temperature, heart rate, heat strain |
+| Tymewear VitalPro breathing sensor | breathing rate, tidal volume, ventilation |
+| Domyos bikes without FTMS, older Yesoul bikes, iConsole+ consoles, Nautilus bikes | power or speed, cadence, resistance (each as it sends) |
+| Inspire IC, XCX and Chrono bikes | cadence, resistance, and power or speed where sent |
+
+**Have one of these? Please verify it. Or add your own device.** Install
+[OFP Studio](https://openfitnessprotocol.org/download), connect it, say whether each number looks right,
+and send it. OFP reads; it never controls a device.
+
+> **Status: first version.** Everything can still change until 1.0. The details are in the
+> [design document](docs/design.md). OFP is free and open source (Apache-2.0).
+
 ---
 
 ## The problem
@@ -288,39 +308,6 @@ In every app that includes OFP, with no change to that app. Today that is an unr
 the TrainerDay desktop app; the project is new. Tables can be written for devices that send their numbers in
 their Bluetooth broadcast and for devices you connect to that simply notify. In the two apps, only
 the broadcast kind is wired in so far.
-
-## Devices
-
-✅ **Verified device types** (each type checked on a real device, not every model):
-
-| Device | What OFP reads |
-|---|---|
-| Heart rate straps (the Bluetooth Heart Rate standard: Garmin, Polar and others) | heart rate, RR intervals (HRV) |
-| Power meters (the Bluetooth Cycling Power standard) | power, cadence |
-| Speed and cadence sensors (the Bluetooth standard) | speed, cadence |
-| Spin bikes and indoor bikes with the Bluetooth fitness machine standard (FTMS): Schwinn IC4 / Bowflex C6, Stages, newer Yesoul and Domyos bikes, and many more | power, cadence, speed, distance, resistance, heart rate |
-| Keiser M3i indoor bike | power, cadence, heart rate, gear, energy, distance, time |
-| Rowers with FTMS (Concept2 and others) | stroke rate, stroke count, power, distance |
-| Treadmills with FTMS | speed, incline, distance |
-
-**Smart trainers** (Wahoo KICKR, Tacx, Elite, Saris, Wattbike and others) are read too, power and cadence,
-but **read only**: OFP does not set their resistance or ERG mode. Your app keeps controlling them the way it
-does now, so there is usually little reason to read them through OFP.
-
-☑️ **Supported, not yet verified** (OFP reads them, from published specifications or other projects'
-findings; no owner has checked one in OFP Studio yet):
-
-| Device | What OFP reads |
-|---|---|
-| Running speed and cadence sensors (the Bluetooth standard) | speed, running cadence |
-| CORE body temperature sensor | core and skin temperature, heart rate, heat strain |
-| Tymewear VitalPro breathing sensor | breathing rate, tidal volume, ventilation |
-| Domyos bikes without FTMS, older Yesoul bikes, iConsole+ consoles, Nautilus bikes | power or speed, cadence, resistance (each as it sends) |
-| Inspire IC, XCX and Chrono bikes | cadence, resistance, and power or speed where sent |
-
-**Have one of these? Please verify it. Or add your own device.** Install
-[OFP Studio](https://openfitnessprotocol.org/download), connect it, say whether each number looks right,
-and send it. OFP reads; it never controls a device.
 
 ## Contributing
 

@@ -38,7 +38,7 @@ const longDate = (d) => new Date(d + 'T12:00:00Z').toLocaleDateString('en-US', {
 const MARK = `<svg viewBox="0 0 64 64" aria-hidden="true"><rect x="2" y="2" width="60" height="60" rx="14" fill="#171626"/><g fill="none" stroke-width="5" stroke-linecap="round"><path d="M21 34a9 9 0 0 1 9 9" stroke="#60a5fa"/><path d="M21 25a18 18 0 0 1 18 18" stroke="#2563eb" stroke-opacity=".85"/><path d="M21 16a27 27 0 0 1 27 27" stroke="#2563eb" stroke-opacity=".55"/></g><circle cx="21" cy="43" r="4.5" fill="#fff"/></svg>`;
 
 function page({ path, title, description, body }) {
-  const nav = [['/download', 'Download'], ['/releases', 'Releases'], [REPO, 'GitHub']]
+  const nav = [['/download', 'Download'], ['/developers', 'Developers'], ['/releases', 'Releases'], [REPO, 'GitHub']]
     .map(([href, label]) => `<a href="${href}"${href === path ? ' class="on"' : ''}>${label}</a>`).join('');
   return `<!doctype html>
 <html lang="en">
@@ -89,7 +89,7 @@ function home(latest) {
     </div>
     <div class="path">
       <span class="who">Developer with a fitness app?</span>
-      <a class="button quiet" href="${REPO}/blob/main/docs/integrating.md">Add OFP to your app</a>
+      <a class="button quiet" href="/developers">Add OFP to your app</a>
       <code class="install" title="Install the library">npm install @openfitnessprotocol/ofp</code>
       <span class="small">One library for any JavaScript app · open source · Apache-2.0</span>
     </div>
@@ -245,6 +245,109 @@ function releases(list, changelog) {
   });
 }
 
+
+const ELECTRON = `// main process (Node). npm install @openfitnessprotocol/ofp @abandonware/noble
+import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import noble from '@abandonware/noble'
+import { Ofp, wasmEngine } from '@openfitnessprotocol/ofp'
+import { advertisementFrom } from '@openfitnessprotocol/ofp/adapters/noble'
+
+const require = createRequire(import.meta.url)
+const file = (p) => readFileSync(require.resolve('@openfitnessprotocol/ofp/' + p))
+
+const ofp = new Ofp({
+  engine: wasmEngine(file('core/ofp_core.wasm')),
+  bundle: file('registry.bundle.json').toString(),
+  iRead: ['180d', '1818', '1816', '1826'],   // the services your app reads itself: OFP leaves them to you
+  on: {
+    device: (d) => addToDeviceList(d),       // a device OFP recognised: { id, name, fields }
+    values: (v) => show(v.basic, v.fields),  // basic = { power, cadence, speed, heartRate }
+    inUse: (id) => markConnected(id),
+    lost: (id) => markDisconnected(id),
+  },
+})
+
+noble.on('discover', (p) => {               // every advertisement, before your own filtering
+  const a = advertisementFrom(p)
+  if (a) ofp.advertisement(a)
+})
+
+// the rider picks a device: ofp.use(id) · lets it go: ofp.release(id)`;
+
+const RN = `// React Native. npm install @openfitnessprotocol/ofp react-native-ble-manager
+import { Platform } from 'react-native'
+import BleManager from 'react-native-ble-manager'
+import { Ofp, moduleEngine, companyIdsOf } from '@openfitnessprotocol/ofp'
+import * as core from '@openfitnessprotocol/ofp/core/js'   // Hermes has no WebAssembly
+import bundle from '@openfitnessprotocol/ofp/registry'
+import { advertisementsFrom, scanOptionsFor } from '@openfitnessprotocol/ofp/adapters/react-native-ble-manager'
+
+const companyIds = companyIdsOf(bundle)
+const ofp = new Ofp({
+  engine: moduleEngine(core),
+  bundle,
+  iRead: ['180d', '1818', '1816', '1826'],
+  on: { device: addToDeviceList, values: (v) => show(v.basic, v.fields), inUse: markConnected, lost: markDisconnected },
+})
+
+BleManager.onDiscoverPeripheral((p) => {
+  for (const a of advertisementsFrom(p, companyIds)) ofp.advertisement(a)
+})
+
+// scan with OFP's extra options so broadcast-only devices get through your service filter:
+BleManager.scan({ serviceUUIDs: myServices, seconds: 30, ...scanOptionsFor({ companyIds }, ofp.scanNeed(), undefined, Platform.OS) })`;
+
+function developers() {
+  return page({
+    path: '/developers', title: 'Add Open Fitness Protocol to your app',
+    description: 'One JavaScript library to read fitness devices in your app: npm install @openfitnessprotocol/ofp. Electron, Node and React Native quick starts.',
+    body: `
+<div class="hero">
+  <h1>Add OFP to your app</h1>
+  <p class="lead">One library reads every device in the registry: heart rate straps, power meters, FTMS bikes, rowers and treadmills, and the devices the community adds. You wire four hooks to your app's own Bluetooth once. New devices come with a version bump.</p>
+  <pre class="code install-big"><code>npm install @openfitnessprotocol/ofp</code></pre>
+  <p class="small">No dependencies · Apache-2.0 · reading only, never control · <a href="https://www.npmjs.com/package/@openfitnessprotocol/ofp">npm</a> · <a href="${REPO}">GitHub</a></p>
+</div>
+
+<section>
+  <h2>The four hooks</h2>
+  <div class="flow">
+    <div><b>Start OFP</b><br>with the services your app already reads. OFP leaves those to you.</div>
+    <div><b>Every advertisement in</b><br>from your scanner, before your own filtering.</div>
+    <div><b>Devices and values out</b><br>into your device list and your screens, by field name.</div>
+    <div><b>The rider's choice</b><br><code>use(id)</code> and <code>release(id)</code>.</div>
+  </div>
+</section>
+
+<section>
+  <h2>Electron or Node</h2>
+  <pre class="code"><code>${esc(ELECTRON)}</code></pre>
+</section>
+
+<section>
+  <h2>React Native</h2>
+  <pre class="code"><code>${esc(RN)}</code></pre>
+  <p class="small">Broadcast-only devices (like the Keiser M3i) send their data in the advertisement, so keep the scan running while one is in use: <code>ofp.scanNeed()</code> says when.</p>
+</section>
+
+<section>
+  <h2>Let an AI assistant wire it</h2>
+  <p>The <a href="${REPO}/blob/main/docs/integrating.md">integration guide</a> has the four hooks in detail, two complete reference integrations (Electron with noble, React Native with react-native-ble-manager), and a prompt to give your assistant. Most apps need one new file.</p>
+</section>
+
+<section>
+  <h2>What you get</h2>
+  <div class="cards">
+    <div class="card"><h3>Values by name</h3><p><code>v.basic</code> has power, cadence, speed and heart rate for every app. <code>v.fields</code> has everything else a device sends (gear, temperature, breathing, RR intervals), each described once with its unit and range, so you can show a field you have never heard of.</p></div>
+    <div class="card"><h3>New devices without code</h3><p>A device is a small data file, checked against a real recording before it ships. A new one reaches your app when you update the package.</p></div>
+    <div class="card"><h3>Your app stays in charge</h3><p>OFP has no Bluetooth of its own and never writes to a trainer. It reads what your scanner hears, and leaves every service you read yourself to you.</p></div>
+  </div>
+</section>
+`,
+  });
+}
+
 export function build() {
   const changelog = readChangelog(readFileSync(join(root, 'CHANGELOG.md'), 'utf8'));
   const list = JSON.parse(readFileSync(join(here, 'releases.json'), 'utf8'))
@@ -255,10 +358,11 @@ export function build() {
   writeFileSync(join(out, 'index.html'), home(latest));
   writeFileSync(join(out, 'download.html'), download(latest, changelog));
   writeFileSync(join(out, 'releases.html'), releases(list, changelog));
+  writeFileSync(join(out, 'developers.html'), developers());
   writeFileSync(join(out, '404.html'), page({ path: '/404', title: 'Not found', description: 'Not found', body: '<div class="hero"><h1>Not found</h1><p class="lead"><a href="/">Back to the start</a></p></div>' }));
   writeFileSync(join(out, 'icon.svg'), MARK.replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" '));
   writeFileSync(join(out, 'robots.txt'), `User-agent: *\nAllow: /\nSitemap: ${SITE}/sitemap.xml\n`);
-  writeFileSync(join(out, 'sitemap.xml'), `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${['/', '/download', '/releases'].map((p) => `<url><loc>${SITE}${p}</loc></url>`).join('')}</urlset>\n`);
+  writeFileSync(join(out, 'sitemap.xml'), `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${['/', '/download', '/developers', '/releases'].map((p) => `<url><loc>${SITE}${p}</loc></url>`).join('')}</urlset>\n`);
   copyFileSync(join(here, 'style.css'), join(out, 'style.css'));
   mkdirSync(join(out, 'images'), { recursive: true });
   for (const f of readdirSync(join(here, 'images'))) copyFileSync(join(here, 'images', f), join(out, 'images', f));

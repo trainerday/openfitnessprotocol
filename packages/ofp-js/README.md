@@ -21,11 +21,8 @@ New devices come with a new version of this package: no code of yours changes.
 
 ## Usage
 
-Open Fitness Protocol for JavaScript apps: the OFP core and the four hooks an app wires up. No
-dependencies.
-
 ```js
-import { Ofp, wasmEngine } from './ofp.js'
+import { Ofp, wasmEngine } from '@openfitnessprotocol/ofp'
 
 const ofp = new Ofp({
   engine: wasmEngine(wasmBytes),          // or moduleEngine(...) where there is no WebAssembly
@@ -65,12 +62,12 @@ disconnectButton.onclick = () => ofp.release(id)
 
 ## The two forms of the core
 
-Both are built by `scripts/build.sh` into `dist/`, with the registry bundle and this package
-(`dist/ofp.js`, `dist/ofp.d.ts`):
-
 | Runtime | Core | Engine |
 |---|---|---|
-| Node, Electron, browsers | `ofp_core.wasm` | `wasmEngine(bytes)` |
-| React Native (Hermes has no WebAssembly) | `ofp_core.asm.js`, the same core as plain JavaScript | `moduleEngine(require('./ofp_core.asm.js'))` |
+| Node, Electron, browsers | `@openfitnessprotocol/ofp/core/ofp_core.wasm` | `wasmEngine(bytes)` |
+| React Native (Hermes has no WebAssembly) | `@openfitnessprotocol/ofp/core/js`, the same core as plain JavaScript | `moduleEngine(core)` |
+
+Quick starts for Electron and React Native: https://openfitnessprotocol.org/developers. In the repository
+both are built by `scripts/build.sh` into `dist/`.
 
 `npm test` runs the same tests against both.

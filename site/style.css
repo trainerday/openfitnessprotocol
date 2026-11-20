@@ -102,3 +102,6 @@ footer.bottom p { margin: 4px 0; }
 .card.maybe { border-left: 4px solid #a3acb9; }
 .cta-line { margin: 10px 0 0; font-size: 15px; color: var(--text); border-top: 1px solid var(--line); padding-top: 10px; }
 code.install { display: inline-block; font-size: 13px; padding: 5px 9px; background: #eef1f5; border-radius: 6px; user-select: all; }
+pre.code { background: #171626; color: #e6e8ef; border-radius: 12px; padding: 16px 18px; overflow-x: auto; font-size: 13px; line-height: 1.55; }
+pre.code code { background: none; padding: 0; font-size: inherit; color: inherit; }
+pre.install-big { display: inline-block; font-size: 16px; padding: 12px 18px; margin: 0 0 10px; }

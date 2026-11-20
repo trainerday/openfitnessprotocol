@@ -1,5 +1,15 @@
 # Adding OFP to an app
 
+```sh
+npm install @openfitnessprotocol/ofp
+```
+
+Quick starts for Electron / Node and React Native: https://openfitnessprotocol.org/developers. The core
+comes in the package twice: `@openfitnessprotocol/ofp/core/ofp_core.wasm` (Electron, Node, browsers) and
+`@openfitnessprotocol/ofp/core/js` (React Native's Hermes, which has no WebAssembly). The device tables
+are `@openfitnessprotocol/ofp/registry` (text) or `/registry.bundle.json`. New devices arrive with new
+versions of the package.
+
 OFP has no Bluetooth of its own: it listens through your app's. So there are four things to wire
 up, and one requirement.
 
