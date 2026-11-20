@@ -173,6 +173,22 @@ heard of.
   untouched.
 - An OFP Connect sends the same services over the air, so the app's code is the same either way.
 
+#### A device that has a standard service and something of its own
+
+*Decided 2026-11-20.* Many sensors offer a standard service for the usual value and a service of
+their own for more (a heart-rate strap that also sends ECG, a trainer with an extension). OFP does
+not merge into the device the app already shows. Its part appears as a **second device named
+"<device> Extras"** (for example "Polar H10 Extras"):
+
+- The app keeps reading the standard service exactly as it does today. Nothing about that changes.
+- The Extras device carries only what the table decodes from the device's own service: normally
+  the fields the standards have no place for.
+- A device OFP is the only way to read keeps its plain name (a broadcast-only bike is just that
+  bike).
+- Both are the same physical device, so the host uses one connection for both.
+- If a table does decode a value the standard service also carries, the rider chooses the source
+  in the app, the way they choose between the ANT+ and the Bluetooth version of a sensor today.
+
 Still open: the OFP service's UUIDs and byte layout, and which standard service a source offers when
 several would fit. Until this exists, a host uses the JSON messages of the host interface below.
 
