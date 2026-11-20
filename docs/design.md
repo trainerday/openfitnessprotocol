@@ -1,214 +1,237 @@
-# Open Fitness Data (OFD) — design
+# Open Fitness Protocol (OFP) — design
 
-Status: **draft, nothing built yet.** This is the design agreed in the first design session
-(2026-11-20). Everything here can still change until 1.0. Parts marked *unproven* have not been
-prototyped.
+Status: **draft, nothing built yet.** This records the design sessions of 2026-11-20. Everything
+can still change until 1.0. Parts marked *unproven* have not been prototyped.
 
-## What it is
+## The idea in one paragraph
 
-An **OFD** is a small piece of software that sits between fitness devices and fitness apps. It
-connects to sensors and input devices, turns what they send into a shared set of named fields, and
-offers those fields to any app over Bluetooth Low Energy (BLE), WiFi, or a local connection on the
-same computer.
+OFP connects to fitness devices that an app does not support by itself and hands the app one
+standard, GATT-style stream of named fields. To the app, OFP looks like one more sensor profile next
+to Heart Rate and FTMS: support that profile once, and every device behind it arrives the same way.
+New fields and new devices are added to this repo with a pull request, not by a committee.
 
 ```
- devices               an OFD                      consumers
- breathing sensor ─┐   ┌────────────────────┐ BLE   ┌─ training apps
- core temperature ─┼──▶│ plugins → fields   │ WiFi ─┼─ recording apps
- buttons, DIY     ─┘   └────────────────────┘ local └─ anything else
+ devices                    OFP                         app
+ broadcast-only bike ─┐   ┌──────────────────────┐
+ breathing sensor    ─┼──▶│ readers + tables     │──▶ one stream of named fields
+ heart-rate strap    ─┘   │ → fields             │
+                          └──────────────────────┘
 ```
 
-The same OFD runs in three places:
+## The core: four parts
 
-- **ESP32 stick** — a cheap always-on board. This is the smallest OFD and the reference target.
-- **Computer** — a background app on Windows, macOS or Linux.
-- **Phone** — the same core built into a consumer app as a library (a separate background app
-  cannot reliably serve another app on the same phone).
+Everything else in this document is optional and comes later.
 
-## Why
+### 1. Fields
 
-- Standards such as FTMS only change when a committee agrees. Adding one field (torque per
-  repetition, breathing rate, core temperature) can take years or never happen.
-- New sensors therefore ship with proprietary protocols, and every app has to write its own
-  connector for every device.
-- OFD moves both decisions into a public git repo: a field or a device is added with a pull
-  request, and the rules are enforced by automated checks instead of by meetings.
+A registry with one file per field: id, name, unit, type, scale, plausible range, sample kind, and
+one paragraph saying what it means.
 
-The goal for a consumer app: **implement OFD once, and never write another device connector.**
-
-## Scope
-
-| In scope now | Considered, built later | Out of scope |
-|---|---|---|
-| Sensor data flowing in (breathing, temperature, muscle oxygen, power, heart rate, …) | Extended control beyond what FTMS offers | Replacing trainer-control bridges such as QZ |
-| Input events flowing in (buttons, shifters, steering) | | |
-| Managing an OFD from inside a consumer app | | |
-
-"Data" means everything coming *from* devices, whether a number every second or a button press now
-and then. "Control" means telling a trainer what to do; it is not designed here, but the wire
-format reserves room for it (see [Reserved for control](#reserved-for-control)).
-
-## Three layers that move at different speeds
-
-Stability comes from keeping these apart.
-
-### 1. Field registry — moves fast
-
-One file per field: id, name, unit, type, scale, sample kind, and one paragraph saying what it
-means.
-
-- **Append-only.** Once a field is stable, its id, unit and meaning never change, and ids are
-  never reused. An automated check rejects any pull request that edits a stable entry.
-- **Two tiers.**
-  - `experimental` — passes the format check and is merged. There is also a private-use id range
-    that needs no pull request at all.
-  - `stable` — needs one working implementation, one real packet capture, and a fixed number of
-    days with no objection.
-- **Superset of existing standards.** Every field in FTMS, Cycling Power, Heart Rate and Running
-  Speed and Cadence gets a registry id on day one.
-- **Sample kinds.** `instantaneous` (power now), `event` (one breath, one button press) and
+- **Append-only.** Once a field is stable, its id, unit and meaning never change and ids are never
+  reused. An automated check rejects any pull request that edits a stable entry.
+- **Two tiers.** `experimental` passes the format check and is merged (there is also a private-use
+  id range that needs no pull request). `stable` needs a working implementation, a real capture, and
+  a fixed number of days with no objection.
+- **Sample kinds.** `instantaneous` (power now), `event` (one breath, one button press),
   `cumulative` (total crank revolutions).
+- **Superset of existing standards.** Every field in Heart Rate, Cycling Power, Cycling Speed and
+  Cadence, Running Speed and Cadence and FTMS has a registry id from the start.
 
-Devices can ship a new field first and standardize it afterwards.
+### 2. Readers
 
-### 2. Wire format — moves almost never
+A reader is code in the core that knows one *shape* of device communication. Readers are written
+once, reviewed by maintainers, and are few:
 
-- **Self-describing.** A source first publishes a descriptor (field id, unit, type, name, sample
-  kind, tier, source identity), then sends compact packets. A consumer can show and record a field
-  it has never heard of.
-- **Defined once as a GATT service**, carried three ways: BLE, GATT tunnelled over TCP with mDNS
-  discovery (documented here, and kept compatible with the "direct connect" model trainers already
-  use), and loopback for a consumer on the same computer.
-- **Events are sent immediately**; sampled data may be batched.
-- **Existing standards alongside.** Where it makes sense an OFD also exposes plain FTMS / Heart
-  Rate / Cycling Power, and OpenBikeControl for buttons, so apps that know nothing about OFD still
-  work.
+| Reader | Shape |
+|---|---|
+| Broadcast | Values inside the BLE advertisement; the device never accepts a connection |
+| Notify | Connect, subscribe to a characteristic, fixed layout |
+| Flagged notify | The same, with optional values switched on by flag bits |
+| Standard profiles | Heart Rate, Cycling Power, Speed and Cadence, Running Speed, FTMS data — layout already fixed by the Bluetooth standards, so no table is needed |
 
-### 3. Plugins — where contributors work
+Because the standard profiles are readers too, an app can use OFP as its only way of reading
+sensors. Existing apps do not have to: OFP can sit beside the parsers an app already has.
 
-A plugin teaches an OFD to understand one device. The plugin format is whatever runs comfortably on
-the ESP32; anything that runs there runs everywhere.
+A new reader is requested with an issue (device, capture, how it sends data) and added to the core
+with a full code review. This should be rare.
 
-- **Declarative plugins** (the normal case): a data file saying which advertisement to match,
-  which characteristic to read, and which bytes at which scale become which field, with formulas
-  and a few built-in helpers (delta, rate, rolling average). No code runs.
-- **Code plugins** (handshakes, checksums, encryption): a sandboxed WebAssembly module with a tiny
-  fixed API — called on connect, on packet and on timer; may write to its own device and emit
-  fields; nothing else. Memory and time per packet are capped. *Unproven on the ESP32.*
-- **Every plugin ships with a real capture** and the expected output. The automated checks replay
-  it in the same core, under the ESP32's limits.
-- **Each plugin declares the advertisement it matches**, so an OFD can say "supported" before it
-  connects to anything.
+### 3. Tables
 
-Three ways a data source can reach consumers:
+A table teaches a reader about one device. It is data, not code:
 
-1. **Native** — the device's own firmware is an OFD. No plugin needed.
-2. **Plugin** — an OFD translates an existing proprietary device.
-3. **Local push** — anything that is not BLE (a script, a camera tool, a DIY sensor on USB) sends
-   fields to an OFD's local or WiFi endpoint.
+- which device it matches (advertised name, company id, service),
+- which reader it uses,
+- which bytes at which scale become which field,
+- conditions (use this packet only when byte 2 is 0; this value exists from firmware build X),
+- bit masks and simple arithmetic,
+- which value tells two identical devices apart (for example a bike number), so the rider can pick,
+- after how long without a packet the values read as zero.
 
-## What a consumer has to do
+Tables live in this repo. Every table ships with a real capture and the expected output; the
+automated checks replay it.
 
-"No more connectors" is only true if a consumer does something useful with a field it has never
-seen. The consumer contract:
+### 4. Output
 
-- **Show it** — a generic tile built from the descriptor.
+One GATT-style profile: the source describes its fields once (id, unit, type, name, sample kind,
+tier, source identity), then sends compact values. An app can show and record a field it has never
+heard of.
+
+- Events are sent immediately; sampled values may be batched.
+- When OFP runs inside the app, the app receives the same messages directly, with no radio in
+  between. When OFP runs as a separate bridge, the same messages travel over BLE or the network.
+  The app-side code is the same either way.
+
+## Where OFP runs
+
+- **The OFP library** — the core, embedded in an app. It contains **no Bluetooth**: the app passes
+  in what its own Bluetooth layer hears and performs the writes the library asks for. This is how
+  an app adds OFP without a second Bluetooth stack fighting its own.
+- **An OFP bridge** (later) — the same library with its own radio and its own outputs: an ESP32
+  stick, a desktop background app, or an Android app.
+
+The small interface between the library and its host (advertisement seen, connect, subscribe,
+read, write, disconnected) is part of the standard and is frozen like stable fields. Broadcast-only
+devices put one real requirement on the host: continuous scanning with duplicates during the
+session.
+
+The core is written in **Rust** and compiled for desktop, iOS, Android and microcontrollers, so a
+table behaves the same everywhere. The automated checks apply a microcontroller's memory and time
+limits from the start, so everything written before the stick exists will run on it.
+
+Phones:
+
+- **iPhone** — the library inside each app, or a stick. A separate background app cannot reliably
+  serve another app on the same phone. Several apps can share one sensor connection, so two apps
+  that each embed the library do not fight over a device.
+- **Android** — the library, or a standalone bridge app running as a foreground service that other
+  apps reach over loopback.
+
+## What a consuming app does
+
+"Support it once" only holds if the app does something useful with a field it has never seen:
+
+- **Show it** — a generic tile built from the description.
 - **Record it** — as a stream next to power and heart rate.
 - **Export it** — as a FIT developer field, so it survives into other tools.
 - **Choose between sources** when two send the same field.
-- **Treat experimental fields as extra data**, separate from stable ones.
+- **Keep experimental and unreviewed fields apart** from stable ones.
 
-## Managing an OFD from a consumer (the OFD remote)
+## Rules of the official registry
 
-A stick has no screen, so setup happens inside whichever app the rider already uses. The remote is
-a small fixed set of requests in the same service as the data, identical over every transport:
+- **Tables only.** The official registry hosts tables, never code. A table cannot perform a
+  handshake or decrypt anything.
+- **No unlocks.** A table may decode what a device sends openly. Nothing in the registry may defeat
+  authentication, encryption or pairing that the maker put there to restrict access. Edge cases
+  (a fixed "start sending" command) are ruled on one by one and the rulings are kept in the repo.
+- **Verification levels.**
 
-| Request | What it does |
-|---|---|
-| Info | Version, how many sensors it can hold, which plugins it has |
-| Scan | Nearby devices, each marked supported / unknown |
-| Connect / forget | Add or remove a device |
-| Install plugin | The consumer downloads the plugin and pushes it to the OFD (a stick has no internet) |
-| Status | Per source: connected, battery, signal, time of last packet |
+  | Level | What it takes |
+  |---|---|
+  | Submitted | The author's capture, replayed by the automated checks |
+  | Confirmed | A second person with the same device adds a capture or signs off |
+  | Field-proven | Apps report that real riders connected and got sensible data |
 
-What the rider sees:
+  The core checks every value against the field's plausible range. Apps may report anonymous,
+  opt-in counts (table, version, device firmware, share of packets decoded, values in range — no
+  rider, no values) by submitting periodic summaries to this repo. A table that starts failing
+  drops a level and its author is told.
 
-1. In the app's devices screen, "Other sensors". The app finds any OFD by itself.
-2. The OFD lists what it hears nearby.
-3. The rider taps a device. Its data appears.
-4. It is remembered, and it keeps working for other apps even when the first app is closed.
+## Your own plugins, by URL (later)
 
-The rider never needs the words plugin, registry or field.
+People can do what they want on their own install.
 
-Rules that keep this safe and stable:
+- A rider gives OFP the URL of a plugin. OFP shows what it claims (name, author, device, fields,
+  whether it sends commands), warns that it is **not reviewed**, and the rider confirms.
+- A URL plugin may be **code**. It runs in a WebAssembly sandbox whose entire outside world is:
+  receive a packet from its device, write to its device, set a timer, emit a field, write a log
+  line. No files, no network, nothing about the rider or the app. Memory and time per call are
+  capped. *Unproven on microcontrollers; app-store rules for downloaded code on iPhone need
+  checking.*
+- The rider attaches it to a device explicitly; it is pinned to the version they approved; its
+  fields stay labelled unreviewed. Sending commands to the device is a declared permission, off by
+  default.
+- The project does not host or list such plugins.
 
-- The OFD owns the sensor connection, so several apps can share one sensor.
-- Configuration is stored on the OFD; a consumer is needed to change it, not to run it.
-- An OFD accepts only plugins signed by a registry release. Experimental plugins need an explicit
-  "allow unreviewed" switch.
-- One consumer configures at a time; others can read status.
-- Remote requests are frozen like stable fields: new ones may be added, existing ones never change.
+This is also the development loop: write a table, host it anywhere, load it by URL, ride with it,
+then submit the same file as a pull request.
 
-## Reserved for control
+URL plugins are the lab. When several of them need the same thing (for example values split across
+packets), that pattern can be proposed as a new reader. Once it is in the core, those devices
+become tables and can enter the official registry.
 
-Not built, but kept open at almost no cost:
+## Later, and optional
 
-- a version byte in the descriptor,
-- a read/write flag on every field,
-- a reserved, unused control characteristic in the service.
+None of these changes the four core parts.
 
-## Implementation
+- **Bridges** — the ESP32 stick (flashed from a web page), the desktop app, the Android app.
+- **The remote** — a small frozen set of requests (info, scan, connect / forget, install, status)
+  in the same profile as the data, so a bridge with no screen is set up from inside whichever app
+  the rider uses. The bridge owns the sensor connections, stores its own configuration, and lets
+  one app configure at a time.
+- **Transports** — BLE; GATT tunnelled over TCP with mDNS discovery (documented here, compatible
+  with the "direct connect" model trainers use); loopback on the same computer; WebSocket, which
+  also lets browser apps and simple scripts connect.
+- **Local push** — anything that is not BLE (a script, a camera tool, a DIY board) sends fields in
+  over loopback or WebSocket.
+- **Cloud relay** — the same messages through a server. The protocol can describe it so anyone can
+  run one; the project does not host one.
+- **Inputs** — buttons, shifters and steering are event fields. OFP mirrors OpenBikeControl's
+  inputs and can speak it outward instead of defining a competing vocabulary.
+- **Existing standards outward** — a bridge can also expose plain Heart Rate / Cycling Power / FTMS
+  so apps that know nothing about OFP still work.
+- **Control** — telling a trainer what to do is out of scope for now. Reserved at almost no cost: a
+  version byte in the description, a read/write flag on every field, a reserved control
+  characteristic. Until it exists, an OFP-only app can read a trainer but not control it.
 
-- **One portable core in Rust**: the plugin interpreter and the packet codec, compiled for the
-  ESP32, desktop, iOS and Android. One core is what makes a plugin behave the same everywhere.
-- **ESP32 firmware**: the reference OFD. Flashed from a web page over USB.
-- **Desktop app**: a shell around the same core.
-- **Conformance tests**: anything calling itself an OFD passes the same tests in this repo.
+## First version
 
-Known limits of the stick: it holds only a handful of sensor connections while also serving a
-consumer on the same radio, and it stores only the plugins the rider has turned on.
+Small enough to hold in your head:
+
+- the library (Rust core, no Bluetooth),
+- the broadcast reader,
+- one table: the Keiser M3i, whose broadcast needs conditions, a bit mask, arithmetic, a bike-number
+  picker and a staleness time,
+- about ten fields,
+- the output format,
+- running inside one desktop app, checked against packets with known answers and against an
+  existing hardware bridge for the same bike.
+
+Next: a device that connects and notifies (the notify reader), then the standard-profile readers.
+
+The repo becomes public when the first version runs end to end, a newcomer can add a field and a
+table by following the README, and the license, governance and contributing documents exist.
 
 ## How the repo governs
 
-- The rules live in this repo and are enforced by automated checks: format, append-only, capture
-  replay, resource limits.
-- Stable changes use lazy consensus — open for a fixed number of days, approved by maintainers,
+- The rules live here and are enforced by automated checks: format, append-only, capture replay,
+  resource limits.
+- Stable changes use lazy consensus: open for a fixed number of days, approved by maintainers,
   merged if nobody objects.
 - Created and maintained by TrainerDay, open to everyone. Maintainers are added from people whose
-  plugins and fields have been merged.
-- License: still to decide. The working assumption is a permissive license with a patent grant for
-  code, and an open documentation license for the specification.
+  tables, fields and readers have been merged.
+- Anything calling itself OFP-compatible passes the conformance tests in this repo.
+- License: undecided. Working assumption: a permissive license with a patent grant for code and an
+  open documentation license for the specification.
 
 ## Related work
 
-- **FTMS, Cycling Power, Heart Rate, Running Speed and Cadence** — the Bluetooth standards OFD
-  imports as fields and keeps emitting.
-- **QZ (qdomyos-zwift)** — a bridge app that makes many proprietary machines appear as standard
-  trainers. It covers control; OFD does not try to.
-- **OpenBikeControl** — an open protocol for buttons and other inputs. OFD mirrors its inputs and
-  speaks it outward instead of defining a competing one.
+- **Heart Rate, Cycling Power, Speed and Cadence, Running Speed, FTMS** — the Bluetooth standards
+  OFP reads and imports as fields.
+- **QZ (qdomyos-zwift)** — a bridge that makes many proprietary machines appear as standard
+  trainers, including control. OFP does not try to replace it.
+- **OpenBikeControl** — an open protocol for buttons and other inputs.
 - **FIT developer fields and USB HID descriptors** — the models for self-describing data.
-
-## First proof
-
-Small enough to build, wide enough to test every part of the design:
-
-- about twenty registry fields,
-- one declarative plugin (a breathing sensor) and one for core temperature,
-- one code plugin (a button controller), to test the WebAssembly tier,
-- one local-push example,
-- running on an ESP32 stick, shown in one consumer app as generic tiles, and written to the FIT
-  file.
-
-The repo becomes public when this runs end to end, a newcomer can add a field and a plugin by
-following the README, and the license, governance and contributing documents are in place.
 
 ## Open questions
 
-- Is WebAssembly practical on the ESP32 next to two BLE roles on one radio, or does the code tier
-  need something smaller?
-- Exact descriptor and packet layout, and how large descriptors are split over BLE.
-- How plugin signing and registry releases work in practice.
-- How many days "no objection" lasts, and how many maintainer approvals a stable change needs.
-- License choice.
-- Whether the name "Open Fitness Data" is distinctive enough for a compatibility badge.
+- The table language: exact syntax for conditions, masks and arithmetic.
+- The description and value layout, and how long descriptions are split over BLE.
+- How official tables are signed and delivered to apps (a signed index on static hosting is the
+  working idea), and offline behaviour.
+- How long "no objection" lasts and how many approvals a stable change needs.
+- WebAssembly on a microcontroller next to two BLE roles on one radio.
+- App-store rules for URL-loaded code on iPhone.
+- Whether offering a URL loader carries legal exposure when people load unlock plugins (a question
+  for a lawyer).
+- License.
+- What to call the pieces: "library" and "bridge" are working names.

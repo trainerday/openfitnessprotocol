@@ -1,11 +1,10 @@
-# Open Fitness Data (OFD)
+# Open Fitness Protocol (OFP)
 
-An open standard, governed by this repo, for getting fitness sensor and input data into any app
-over Bluetooth Low Energy, WiFi, or a local connection.
+An open protocol, governed by this repo, for getting fitness sensor and input data into any app.
 
-An **OFD** connects to devices (a breathing sensor, a core temperature sensor, buttons, a DIY
-board), turns what they send into a shared set of named fields, and offers them to every app. New
-fields and new devices are added with a pull request, not by a committee.
+OFP connects to devices an app does not support by itself (a broadcast-only bike, a breathing
+sensor, a DIY board) and hands the app one standard stream of named fields. An app supports OFP
+once; new fields and new devices are added here with a pull request, not by a committee.
 
 **Status: design only, nothing built yet.** Everything may change until 1.0.
 
