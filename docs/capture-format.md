@@ -79,7 +79,9 @@ The rider's answer in `ofp live` to "does the device's display show the same?".
 
 - `ok: true` — the table must decode exactly `shown` at that moment, now and after any later change
   to the table.
-- `ok: false` — the check fails until the table decodes a value within tolerance of `console`.
+- `ok: false` — the rider said it is wrong; `console` is what the device showed, when they said. The
+  check fails until a later `ok: true` for the same field, or until the table decodes a value within
+  tolerance of `console`.
 
 ## Privacy
 
