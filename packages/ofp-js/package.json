@@ -1,6 +1,6 @@
 {
   "name": "@openfitnessprotocol/ofp",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Open Fitness Protocol: read fitness devices (heart rate, power, FTMS bikes, rowers, treadmills and more) from any JavaScript app. The core (WebAssembly, or plain JavaScript for React Native), the device tables, and the four hooks an app wires up.",
   "license": "Apache-2.0",
   "type": "module",
