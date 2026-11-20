@@ -285,7 +285,7 @@ the broadcast kind is wired in so far.
 | Device | What OFP reads |
 |---|---|
 | Heart rate straps (the Bluetooth Heart Rate standard) | heart rate |
-| Power meters (the Bluetooth Cycling Power standard) | power, cadence, speed |
+| Power meters (the Bluetooth Cycling Power standard) | power, cadence |
 | Speed and cadence sensors (the Bluetooth standard) | speed, cadence |
 | Spin bikes and indoor bikes with the Bluetooth fitness machine standard (FTMS): Schwinn IC4 / Bowflex C6, Stages, newer Yesoul and Domyos bikes, and many more | power, cadence, speed, distance, resistance, heart rate |
 | Keiser M3i indoor bike | power, cadence, heart rate, gear, energy, distance, time |
