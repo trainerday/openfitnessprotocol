@@ -14,6 +14,7 @@
 #   OFP_WINDOWS_DIR      that clone, Windows path (default C:\Projects\openfitnessprotocol)
 #   OFP_WINDOWS_SIGN     "<endpoint> <account> <profile>" for Azure Trusted Signing (unsigned without it)
 #   Cloudflare: see site/deploy.sh. The bucket is ofp-releases.
+#   NPM_TOKEN            publishes @openfitnessprotocol/ofp with the release (a token that bypasses two-factor)
 set -e
 cd "$(dirname "$0")/.."
 ROOT=$(pwd)
@@ -123,6 +124,16 @@ Downloads and every version: $SITE/download"
     echo "  GitHub release v$V"
   else
     echo "  the repository is not public: no GitHub release"
+  fi
+  # the JavaScript package, same version (skipped when that version is on npm already)
+  if [ -n "$NPM_TOKEN" ]; then
+    if [ "$(npm view "@openfitnessprotocol/ofp@$V" version 2>/dev/null)" = "$V" ]; then
+      echo "  npm: @openfitnessprotocol/ofp $V is published already"
+    else
+      scripts/npm-publish.sh >/dev/null && echo "  npm: @openfitnessprotocol/ofp $V"
+    fi
+  else
+    echo "  NPM_TOKEN is not set: the npm package was not published"
   fi
   if [ -n "$(git status --porcelain site/releases.json)" ]; then
     git add site/releases.json

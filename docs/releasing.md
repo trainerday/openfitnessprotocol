@@ -45,7 +45,7 @@ scripts/release.sh 0.1.1       # all four steps
 | `prepare <x.y.z>` | Refuses unless on `main`, clean, equal to `origin/main`, the version newer than the last release, and `CHANGELOG.md` has notes under `## Next`. Then: `## Next` becomes `## x.y.z (date)`, the version is set, `npm test`, commit "Release x.y.z" (signed off), tag `vx.y.z`, push both |
 | `mac` | The universal Mac app (Apple Silicon and Intel), signed and notarized, and its disk image notarized (`scripts/app-build.sh`). Checks the version inside the app and that Gatekeeper accepts both. Copies the disk image to `release/` |
 | `windows` | Over ssh on the Windows machine: fetch, check out the tag, `scripts\app-build-windows.ps1` (NSIS installer, signed with Azure Trusted Signing). Copies the installer to `release/`. Skipped when `OFP_WINDOWS_SSH` is not set |
-| `publish` | Uploads the files and the "latest" copies, records the release in `site/releases.json` and writes `latest.json`, deploys the site, uploads `latest.json` last, creates the GitHub release (when the repository is public), commits "Published x.y.z" |
+| `publish` | Publishes the JavaScript package `@openfitnessprotocol/ofp` at the same version (when `NPM_TOKEN` is set; `scripts/npm-publish.sh`). Uploads the files and the "latest" copies, records the release in `site/releases.json` and writes `latest.json`, deploys the site, uploads `latest.json` last, creates the GitHub release (when the repository is public), commits "Published x.y.z" |
 
 A failed step is run again on its own. `prepare` is the only one that must not run twice for one version.
 
@@ -56,6 +56,7 @@ OFP_WINDOWS_SSH=<ssh host of the Windows machine>
 OFP_WINDOWS_DIR='C:\Projects\openfitnessprotocol'                 # the default
 OFP_WINDOWS_SIGN="<endpoint> <signing account> <certificate profile>"
 CLOUDFLARE_ACCOUNT_ID=…   and CLOUDFLARE_API_TOKEN, or CLOUDFLARE_EMAIL + CLOUDFLARE_GLOBAL_API_KEY
+NPM_TOKEN=…               an npm token for @openfitnessprotocol that bypasses two-factor (they expire: 90 days)
 ```
 
 Mac signing and notarizing: a Developer ID certificate in the keychain and an App Store Connect API key
