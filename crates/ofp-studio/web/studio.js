@@ -742,7 +742,9 @@ function liveGroups() {
     groups.push({
       id: 'ofp', title: src.name,
       hint: `OFP table “${src.table}” (version ${src.table_version})` + (isDraft ? ' · DRAFT: written from documentation, never tried on this device. Your answers below are what verifies it.' : ''),
-      tiles: src.fields.map((f) => ({ id: 'ofp:' + f.key, proto: 'ofp', key: f.key, f, value: S.live.values[f.key], stale: S.live.stale })),
+      // a list (RR intervals) is answered right or wrong like any value; the answer is kept as a note, as a list
+      // cannot be checked against one number on a display
+      tiles: src.fields.map((f) => ({ id: 'ofp:' + f.key, proto: f.type === 'list' ? 'ofp-list' : 'ofp', key: f.key, f, value: S.live.values[f.key], stale: S.live.stale })),
     });
   }
   const T = Tester.state();
@@ -775,14 +777,14 @@ function verdictOf(tile) {
 
 const sayRight = guard(async (tile) => {
   if (tile.proto === 'ofp') await api('/api/confirm', { field: tile.key });
-  else await api('/api/note', { text: `RIGHT: ${tile.proto} ${tile.key} (showed ${fmt(tile.value, tile.f)})` });
+  else await api('/api/note', { text: `RIGHT: ${tile.proto} ${tile.key} (showed ${fmt(Array.isArray(tile.value) ? tile.value[tile.value.length - 1] : tile.value, tile.f)})` });
   toast(`${tile.f.name}: right`);
 });
 
 /** "No, this is wrong": one optional line in the rider's own words. A plain number is taken as what the display showed. */
 function sayWrong(tile) {
   const dlg = $('#dialog');
-  const shown = fmt(tile.value, tile.f);
+  const shown = fmt(Array.isArray(tile.value) ? tile.value[tile.value.length - 1] : tile.value, tile.f);
   const what = h('input', { style: 'width:100%', placeholder: 'e.g. the console shows about 70 · it jumps around · it is double' });
   const save = guard(async () => {
     const text = what.value.trim();
@@ -869,15 +871,6 @@ function renderTiles() {
       const cls = 'value' + (none ? ' none' : mode === 'text' ? ' text' : '');
       if (!show.firstChild || show.firstChild.className !== cls) show.replaceChildren(h('div', { class: cls }, text));
       else if (show.firstChild.textContent !== text) show.firstChild.textContent = text;
-    }
-    // a list is not something a display shows as one number: no right / wrong for it
-    if (t.f.type === 'list') {
-      const el = tile.querySelector('.verdict');
-      const text = 'one value per beat';
-      if (el.textContent !== text) { el.textContent = text; el.className = 'verdict muted'; }
-      const answer = tile.querySelector('.row.answer');
-      if (answer) answer.hidden = true;
-      continue;
     }
     const v = verdictOf(t);
     const el = tile.querySelector('.verdict');
