@@ -11,6 +11,8 @@
 body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
 header { display: flex; align-items: center; gap: 16px; padding: 10px 20px; background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; flex-wrap: wrap; }
 .brand { font-weight: 700; letter-spacing: .02em; }
+.brand .version { font-weight: 400; color: var(--muted); font-size: 12px; margin-left: 4px; }
+.banner.update { background: #ecfdf3; display: flex; align-items: center; gap: 12px; }
 .grow { flex: 1; }
 nav { display: flex; gap: 4px; flex-wrap: wrap; }
 nav button { background: none; border: 0; padding: 7px 12px; border-radius: 8px; color: var(--muted); font: inherit; cursor: pointer; }

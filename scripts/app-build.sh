@@ -31,5 +31,15 @@ else
   echo "No App Store Connect API key in the environment: not notarizing."
 fi
 
-cd crates/ofp-studio-app
-exec npx tauri build "$@"
+(cd crates/ofp-studio-app && npx tauri build "$@")
+
+# Tauri notarizes the app inside the disk image, not the image itself. A downloaded image that is not
+# notarized can be refused on another Mac, so it is notarized and stapled here as well.
+if [ -n "$APPLE_API_KEY_PATH" ]; then
+  for dmg in target/release/bundle/dmg/*.dmg target/*-apple-darwin/release/bundle/dmg/*.dmg; do
+    [ -f "$dmg" ] || continue
+    echo "Notarizing $dmg"
+    xcrun notarytool submit "$dmg" --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" --wait
+    xcrun stapler staple "$dmg"
+  done
+fi

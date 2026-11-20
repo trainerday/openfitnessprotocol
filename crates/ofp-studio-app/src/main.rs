@@ -102,7 +102,7 @@ fn main() {
                 }
             };
             WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url.parse()?))
-                .title("OFP Studio")
+                .title(format!("OFP Studio {}", env!("CARGO_PKG_VERSION")))
                 .inner_size(1280.0, 860.0)
                 .min_inner_size(900.0, 600.0)
                 // The window is the Studio only: a link to anywhere else opens in the browser

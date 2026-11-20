@@ -20,8 +20,8 @@ switch, and what to set on GitHub right after it.
 
 ## Look at these before the switch
 
-- **The domains** `openfitnessprotocol.org` and `openfitnessprotocol.com` were bought 2026-11-20. Nothing is
-  served on them yet; the `.org` is meant to be the project's address, the `.com` to point at it.
+- **The site** `openfitnessprotocol.com` is live since 2026-11-20 (`.org` and `www.` redirect to it): the
+  pages and the downloads (`docs/releasing.md`). Its links to GitHub open once the repository is public.
 
 - **Who can write.** Today six accounts can push: three admins and three with write access. After the
   branch rules, write access can no longer reach `main` without a code owner's approval, but **an admin

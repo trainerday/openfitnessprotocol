@@ -1,0 +1,23 @@
+{
+  // openfitnessprotocol.com. Deploy: site/deploy.sh (account and credentials come from the environment).
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "ofp-site",
+  "main": "worker.js",
+  "compatibility_date": "2026-11-20",
+  "workers_dev": false,
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page"
+  },
+  "r2_buckets": [{ "binding": "RELEASES", "bucket_name": "ofp-releases" }],
+  "routes": [
+    { "pattern": "openfitnessprotocol.com", "custom_domain": true },
+    { "pattern": "www.openfitnessprotocol.com", "custom_domain": true },
+    { "pattern": "openfitnessprotocol.org", "custom_domain": true },
+    { "pattern": "www.openfitnessprotocol.org", "custom_domain": true }
+  ],
+  "observability": { "enabled": true }
+}

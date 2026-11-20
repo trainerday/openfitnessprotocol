@@ -1078,9 +1078,46 @@ We are done when every value my device sends is on the Live step, I have marked 
   dlg.showModal();
 }
 
+// ───────────────────────── version, and a newer release ─────────────────────────
+
+/** Where releases are published. `?updates=<url>` points the check elsewhere (for testing the banner). */
+const RELEASES = new URLSearchParams(location.search).get('updates') || 'https://openfitnessprotocol.com/download/latest.json';
+
+/** 1 when a is newer than b ("0.10.0" > "0.9.3"), -1 when older, 0 when the same. */
+function compareVersions(a, b) {
+  const pa = String(a).split('.').map(Number), pb = String(b).split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d) return d > 0 ? 1 : -1;
+  }
+  return 0;
+}
+
+/** Once per start: show this build's version, and a banner when a newer one is published. Silent offline. */
+async function checkForUpdate() {
+  const mine = S.state && S.state.version;
+  if (!mine) return;
+  $('#version').textContent = mine;
+  document.title = 'OFP Studio ' + mine;
+  try {
+    const latest = await (await fetch(RELEASES, { cache: 'no-store' })).json();
+    if (!latest.version || compareVersions(latest.version, mine) <= 0) return;
+    const b = $('#update');
+    b.hidden = false;
+    b.replaceChildren(
+      h('span', {}, h('b', {}, `OFP Studio ${latest.version} is available.`), ` You have ${mine}.`),
+      // A browser opens a tab; the app's window has none, and sends any address that is not the Studio's
+      // to the computer's browser instead (its navigation handler).
+      h('button', { class: 'small primary', onclick: () => { const url = latest.page || latest.url; if (!window.open(url, '_blank')) location.href = url; } }, 'Download'),
+      h('button', { class: 'small ghost', onclick: () => { b.hidden = true; } }, 'Later'));
+  } catch {
+    // offline, or the site is down: say nothing
+  }
+}
+
 // ───────────────────────── start ─────────────────────────
 
 setInterval(() => { if (S.tab === 'live') renderTiles(); }, 1000);
 document.querySelectorAll('#tabs button').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab)));
 $('#assistant-open').addEventListener('click', assistantDialog);
-reload().then(() => { if (session()) setTab(session().from_file ? 'map' : 'record'); connectEvents(); }).catch((e) => toast(e.message, true));
+reload().then(() => { checkForUpdate(); if (session()) setTab(session().from_file ? 'map' : 'record'); connectEvents(); }).catch((e) => toast(e.message, true));

@@ -276,7 +276,7 @@ impl Studio {
             Err(e) => json!({ "error": e, "fields": [], "tables": [] }),
         };
         let st = self.state.lock().unwrap();
-        json!({ "registry": registry, "radio": st.radio, "session": st.session.as_ref().map(session_json) })
+        json!({ "version": env!("CARGO_PKG_VERSION"), "registry": registry, "radio": st.radio, "session": st.session.as_ref().map(session_json) })
     }
 
     pub fn devices_json(&self) -> Value {
@@ -1182,6 +1182,8 @@ mod tests {
         let yaml = draft["yaml"].as_str().unwrap().to_string();
         assert!(yaml.contains("manufacturer_id: 0x0102") && yaml.contains("min_length: 17") && yaml.contains("power: \"u16le[8]\""), "{yaml}");
         assert_eq!(s.state_json()["session"]["draft"], yaml);
+        // The page shows the version and compares it with the newest release
+        assert_eq!(s.state_json()["version"], env!("CARGO_PKG_VERSION"));
         // the check CI would make
         let checked = s.check_table(&yaml).unwrap();
         assert_eq!(checked["ok"], true, "{checked}");

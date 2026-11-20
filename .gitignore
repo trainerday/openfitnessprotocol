@@ -5,3 +5,7 @@
 /captures
 /node_modules
 /crates/ofp-studio-app/gen
+/site/dist
+/site/.wrangler
+/release
+/.release.env

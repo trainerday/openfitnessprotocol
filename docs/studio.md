@@ -35,7 +35,12 @@ Where the app keeps things:
 
 `scripts/app-build.sh` signs with the Developer ID certificate in the keychain and notarizes with an App Store
 Connect API key from the environment (the names are in the script); without them it builds unsigned. macOS
-asks for Bluetooth under the app's own name the first time. Not built: Windows, a download page, updates.
+asks for Bluetooth under the app's own name the first time.
+
+Releases (Mac and Windows) are downloaded from https://openfitnessprotocol.com/download; how one is made:
+`docs/releasing.md`. The Studio shows its version in the header and, once per start, checks
+`openfitnessprotocol.com/download/latest.json`: when a newer version exists, a banner offers it (nothing is
+installed by itself). `?updates=<url>` on the page points that check elsewhere, for testing the banner.
 
 ## The steps
 
