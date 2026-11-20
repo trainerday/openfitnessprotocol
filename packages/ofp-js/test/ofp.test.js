@@ -170,7 +170,7 @@ test('a sensor that is connected to: the app is asked to connect, and its notifi
   assert.deepEqual([seen.devices[0].id, seen.devices[0].name, seen.devices[0].connectable], ['strap:dev-7', 'Strap · STRAP 01', true])
   assert.equal(seen.connect.length, 0, 'not until the rider picks it')
   assert.equal(ofp.use('strap:dev-7'), true)
-  assert.deepEqual(seen.connect, [{ id: 'strap:dev-7', deviceId: 'dev-7', subscribe: [{ service: 'aaaa0000-0000-4000-8000-000000000001', characteristic: 'aaaa0001-0000-4000-8000-000000000001' }] }])
+  assert.deepEqual(seen.connect, [{ id: 'strap:dev-7', deviceId: 'dev-7', subscribe: [{ service: 'aaaa0000-0000-4000-8000-000000000001', characteristic: 'aaaa0001-0000-4000-8000-000000000001' }], start: [] }])
   ofp.connected('dev-7')
   ofp.notification('dev-7', 'AAAA0001-0000-4000-8000-000000000001', new Uint8Array([0, 142]))
   assert.equal(seen.values.at(-1).basic.heartRate, 142)
