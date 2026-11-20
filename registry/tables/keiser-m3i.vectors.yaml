@@ -67,3 +67,8 @@
   expect:
     source_id: "keiser-m3i:197"
     fields: { power: 0, cadence: 0, heart_rate: 0, elapsed_time: 26, distance: 0, gear: 4, firmware_build: 1600 }
+
+- name: the real bike waking up sends bike number 0 first (skipped; it is bike 197)
+  device_name: M3
+  manufacturer_data: "0201064000000000000000000000000000000b"
+  expect: none

@@ -1,7 +1,7 @@
 id: keiser-m3i
 name: Keiser M3i
 reader: broadcast
-version: 1
+version: 2
 status: experimental
 
 # Where this knowledge comes from, and what it was checked on.
@@ -31,7 +31,9 @@ match:
     min_length: 17
     when: u8[0] == 6
 
-only_when: u8[2] == 0
+# Live packets only. A bike that is waking up sends a few packets with bike number 0 and no values
+# before it sends its real number: those are skipped, or the bike would show up twice.
+only_when: u8[2] == 0 && u8[3] != 0
 
 instance:
   label: bike
