@@ -98,3 +98,5 @@ footer.bottom p { margin: 4px 0; }
 .path .who { font-size: 14px; font-weight: 600; color: var(--text); }
 .devices ul { margin: 6px 0 10px; padding-left: 18px; }
 .devices li { margin: 4px 0; color: var(--text); font-size: 15px; }
+.mark-maybe { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; color: #fff; font-size: 16px; font-weight: 800; margin-right: 6px; vertical-align: -3px; background: #a3acb9; }
+.card.maybe { border-left: 4px solid #a3acb9; }
