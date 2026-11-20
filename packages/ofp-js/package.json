@@ -7,14 +7,15 @@
   "main": "index.js",
   "types": "index.d.ts",
   "files": [
-    "index.js",
-    "index.d.ts",
+    "LICENSE",
+    "NOTICE",
     "adapters",
     "core",
-    "registry.js",
+    "index.d.ts",
+    "index.js",
     "registry.bundle.json",
-    "LICENSE",
-    "NOTICE"
+    "registry.d.ts",
+    "registry.js"
   ],
   "exports": {
     ".": {
@@ -24,8 +25,14 @@
     "./adapters/noble": "./adapters/noble.js",
     "./adapters/react-native-ble-manager": "./adapters/react-native-ble-manager.js",
     "./core/ofp_core.wasm": "./core/ofp_core.wasm",
-    "./core/js": "./core/ofp_core.asm.js",
-    "./registry": "./registry.js",
+    "./core/js": {
+      "types": "./core/ofp_core.asm.d.ts",
+      "default": "./core/ofp_core.asm.js"
+    },
+    "./registry": {
+      "types": "./registry.d.ts",
+      "default": "./registry.js"
+    },
     "./registry.bundle.json": "./registry.bundle.json",
     "./package.json": "./package.json"
   },
