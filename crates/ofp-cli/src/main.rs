@@ -1,12 +1,9 @@
 //! The `ofp` command.
 
-mod check;
-mod exprparse;
-mod inspect;
 #[cfg(feature = "ble")]
 mod live;
-mod registry;
-mod replay;
+
+use ofp_registry::{check, inspect, registry, replay};
 
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;

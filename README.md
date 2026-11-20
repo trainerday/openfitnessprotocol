@@ -71,7 +71,8 @@ flowchart LR
 1. **Simple for riders.** Open the app, tap "Other sensors", pick the device. No settings, no
    jargon.
 2. **Simple for app developers.** Add one library. It gives your app a single stream of named
-   values: power, cadence, breathing rate, whatever the device has. The library contains no
+   values: power and cadence, but also body temperature, breathing rate, rep count, rep weight:
+   whatever the device has. The library contains no
    Bluetooth code of its own, so it fits beside what you already have.
 3. **Simple for contributors.** Most devices are added with a **table**: a short data file that
    says "these bytes mean power, these mean cadence". No programming is needed for the common
@@ -100,13 +101,13 @@ Four small ideas.
 flowchart LR
     DEV["Device<br/>raw bytes"] --> R["Reader<br/>knows the shape"]
     T["Table<br/>knows this device"] --> R
-    R --> F["Fields<br/>power, cadence, ..."]
+    R --> F["Fields<br/>power, cadence,<br/>body temperature,<br/>rep count, rep weight, ..."]
     F --> APP["Your app"]
 ```
 
 | Idea | What it is | Who writes it |
 |---|---|---|
-| **Field** | One named value with a unit, such as "power, watts" | Anyone, by pull request |
+| **Field** | One named value with a unit: "power, watts", but just as well "body temperature, °C", "rep count" or "rep weight, kg". New kinds of measurement are the point | Anyone, by pull request |
 | **Reader** | Code that understands one *way* devices send data, for example "the numbers are in the Bluetooth broadcast" | The core team. There are only a few |
 | **Table** | A small data file that tells a reader about one specific device | Anyone, by pull request |
 | **Output** | One standard stream that describes its values and then sends them | Built in |

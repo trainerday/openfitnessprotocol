@@ -158,6 +158,24 @@ heard of.
 - Where a Bluetooth standard already exists for a value, a Connect can also offer it in that
   standard form, so apps that know nothing about OFP still work.
 
+### Inside an app: a virtual Bluetooth device
+
+*Decided 2026-11-20, not built.* The goal is that adding OFP to an app is close to zero code change.
+
+- To the app, each OFP source looks like one more Bluetooth device, reached through the Bluetooth
+  library the app already uses: it shows up in a scan, can be connected and subscribed to.
+- That virtual device offers the **standard services** for what it has (FTMS Indoor Bike Data,
+  Cycling Power, Heart Rate, byte for byte as the standards define them), so the parsers an app
+  already has work unchanged. A broadcast-only bike simply appears as an FTMS bike.
+- It also offers **one OFP service**: a description (read) and values (notify) for everything the
+  standards have no place for, such as a gear. An app that wants those reads one new service.
+- It is delivered as a thin wrapper around each common Bluetooth library. Real devices pass through
+  untouched.
+- An OFP Connect sends the same services over the air, so the app's code is the same either way.
+
+Still open: the OFP service's UUIDs and byte layout, and which standard service a source offers when
+several would fit. Until this exists, a host uses the JSON messages of the host interface below.
+
 ## Where OFP runs
 
 - **OFP Core** contains **no Bluetooth**: the app passes in what its own Bluetooth layer hears and

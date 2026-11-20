@@ -656,9 +656,9 @@ dependencies = [
  "futures",
  "ofp-capture",
  "ofp-core",
+ "ofp-registry",
  "serde",
  "serde_json",
- "serde_yaml_ng",
  "tokio",
 ]
 
@@ -677,6 +677,17 @@ dependencies = [
  "ofp-core",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "ofp-registry"
+version = "0.1.0"
+dependencies = [
+ "ofp-capture",
+ "ofp-core",
+ "serde",
+ "serde_json",
+ "serde_yaml_ng",
 ]
 
 [[package]]

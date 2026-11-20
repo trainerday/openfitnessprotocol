@@ -1,7 +1,7 @@
 //! The Bluetooth commands: scan, record, live.
 
-use crate::registry::Registry;
-use crate::replay::values_of;
+use ofp_registry::registry::Registry;
+use ofp_registry::replay::values_of;
 use crossterm::{cursor, event, execute, queue, style, terminal};
 use futures::StreamExt;
 use ofp_capture::ble::{self, Adv, Scanner};

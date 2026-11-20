@@ -122,20 +122,32 @@ fn around<'a>(timeline: &'a [Decoded], field: &'a str, t: u64) -> impl Iterator<
 pub struct CaptureResult {
     pub summary: String,
     pub errors: Vec<String>,
+    /// Everything the table decoded, in order.
+    pub timeline: Vec<Decoded>,
+    pub decoded: usize,
+    pub adverts: usize,
 }
 
-/// Replay one capture and judge it against the notes and confirmations inside it.
+fn failed(error: String) -> CaptureResult {
+    CaptureResult { summary: String::new(), errors: vec![error], timeline: Vec::new(), decoded: 0, adverts: 0 }
+}
+
+/// Replay one capture file and judge it against the notes and confirmations inside it.
 pub fn check_capture(reg: &Registry, table: Option<&str>, path: &Path) -> CaptureResult {
     let shown = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+    match ofp_capture::read_file(path) {
+        Ok(lines) => check_lines(reg, table, &shown, &lines),
+        Err(e) => failed(e),
+    }
+}
+
+/// The same for a capture already in memory. `shown` is its name in messages.
+pub fn check_lines(reg: &Registry, table: Option<&str>, shown: &str, lines: &[Line]) -> CaptureResult {
     let mut errors = Vec::new();
-    let lines = match ofp_capture::read_file(path) {
-        Ok(l) => l,
-        Err(e) => return CaptureResult { summary: String::new(), errors: vec![e] },
-    };
     let mut core = reg.core();
-    let c = match replay(&mut core, &lines) {
+    let c = match replay(&mut core, lines) {
         Ok(c) => c,
-        Err(e) => return CaptureResult { summary: String::new(), errors: vec![format!("{shown}: {e}")] },
+        Err(e) => return failed(format!("{shown}: {e}")),
     };
     if c.stats.decoded == 0 {
         errors.push(format!("{shown}: no packet was decoded"));
@@ -148,7 +160,7 @@ pub fn check_capture(reg: &Registry, table: Option<&str>, path: &Path) -> Captur
         }
     }
     let (mut notes, mut confirmed, mut refuted) = (0, 0, 0);
-    for line in &lines {
+    for line in lines {
         match line {
             Line::Note { t, values, .. } => {
                 for (key, console) in values {
@@ -205,7 +217,8 @@ pub fn check_capture(reg: &Registry, table: Option<&str>, path: &Path) -> Captur
     for (k, n) in &s.out_of_range {
         summary.push_str(&format!("; {k} out of range {n}x"));
     }
-    CaptureResult { summary, errors }
+    let (decoded, adverts) = (c.stats.decoded, c.stats.adverts);
+    CaptureResult { summary, errors, timeline: c.timeline, decoded, adverts }
 }
 
 pub fn run(dir: &Path, accept_stable: bool) -> Report {
@@ -363,7 +376,7 @@ mod tests {
 
     /// A capture of the shared vector (187 W, 84 rpm, gear 14) with what a rider typed.
     fn capture_with(lines: &[&str]) -> (PathBuf, PathBuf) {
-        let dir = altered(&format!("cap{}", lines.concat().len()), "tables/keiser-m3i.yaml", "version: 1", "version: 1");
+        let dir = altered(&format!("cap{}", lines.concat().len()), "tables/keiser-m3i.yaml", "reader: broadcast", "reader: broadcast");
         let path = dir.join("tables/keiser-m3i.rider.capture.jsonl");
         let packet = |t: u64| format!(r#"{{"type":"packet","t":{t},"kind":"adv","name":"M3","mfr":"020106300007480 38c05bb002a000c2233800e"}}"#).replace(' ', "");
         let mut text = String::from(r#"{"type":"header","format":"ofp-capture","version":1,"tool":"test","host":"test","started":"2026-01-01T00:00:00Z","device":{"name":"M3","company_id":"0102"}}"#);
