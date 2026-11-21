@@ -129,7 +129,7 @@ for (const [name, engine] of Object.entries(engines)) {
     let now = 5_000_000
     const ofp = new Ofp({ engine: engine(), bundle, tickMs: 0, now: () => now, reofferMs: 10_000, on: { device: (d) => seen.devices.push(d.id), radio: (r) => seen.radio.push(r) } })
     const hear = (o) => ofp.advertisement({ deviceId: 'u', name: 'M3', rssi: -61, manufacturerData: keiser(o) })
-    assert.deepEqual(ofp.companyIds, [0x0102, 0x0645])
+    assert.deepEqual(ofp.companyIds, [0xF60B, 0x0102, 0x0645]) // CORE, Keiser, the test table
     assert.equal(ofp.scanNeed(), null)
     hear()
     // heard, not in use: offered again every 10 s while it keeps being heard
@@ -213,7 +213,12 @@ test('adapter: react-native-ble-manager', () => {
 test('adapter: noble', () => {
   const data = Buffer.from(keiser())
   assert.deepEqual(noble.advertisementFrom({ id: 'p1', rssi: -55, advertisement: { localName: 'M3', manufacturerData: data } }), { deviceId: 'p1', name: 'M3', rssi: -55, manufacturerData: data })
-  assert.equal(noble.advertisementFrom({ id: 'p2', advertisement: { localName: 'HRM' } }), null)
+  // a device that is connected to is recognised by its name or its services
+  assert.deepEqual(noble.advertisementFrom({ id: 'p2', rssi: -60, advertisement: { localName: 'TYME-1A2B' } }), { deviceId: 'p2', name: 'TYME-1A2B', rssi: -60, manufacturerData: null })
+  assert.deepEqual(noble.advertisementFrom({ id: 'p3', advertisement: { serviceUuids: ['1809'], overflowServiceUuids: ['000021005b1e4347b07c97b514dae121'] } }).services, ['1809', '000021005b1e4347b07c97b514dae121'])
+  // nothing OFP could match
+  assert.equal(noble.advertisementFrom({ id: 'p4', advertisement: { serviceUuids: [] } }), null)
+  assert.equal(noble.advertisementFrom({ id: 'p5' }), null)
 })
 
 test('an error inside the core turns OFP off and tells the app, without throwing into its scanner', () => {

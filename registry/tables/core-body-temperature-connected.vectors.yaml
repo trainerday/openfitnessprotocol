@@ -1,0 +1,48 @@
+# From the maker's documentation, not a capture. The first one is the worked example of
+# "CORE Connectivity Implementation Notes" v3.1, table 5, as its Python form prints it
+# (b"7\x19\x0f\xa4\r/\x00\x11\x00'"); its hex line has a stray byte and its skin value a slip.
+- name: the documented example, every flag set
+  device_name: CORE 4A
+  notification: "37 190F A40D 2F00 11 00 27"
+  expect:
+    source_id: "core-body-temperature-connected:vector"
+    fields: { core_temperature: 38.65, skin_temperature: 34.92, heat_strain_index: 3.9 }
+    absent: [heart_rate]
+
+- name: a heart rate the sensor receives from its strap
+  device_name: CORE 4A
+  notification: "37 190F A40D 2F00 21 8C 27"
+  expect:
+    source_id: "core-body-temperature-connected:vector"
+    fields: { core_temperature: 38.65, heart_rate: 140 }
+
+- name: no core reading yet (0x7FFF), skin valid
+  device_name: CORE 4A
+  notification: "07 FF7F A40D 0000 10"
+  expect:
+    source_id: "core-body-temperature-connected:vector"
+    fields: { skin_temperature: 34.92 }
+    absent: [core_temperature, heart_rate, heat_strain_index]
+
+- name: an older sensor's packet, without heart rate and heat strain
+  device_name: CORE 4A
+  notification: "07 190F A40D 0000 13"
+  expect:
+    source_id: "core-body-temperature-connected:vector"
+    fields: { core_temperature: 38.65, skin_temperature: 34.92 }
+    absent: [heart_rate, heat_strain_index]
+
+- name: temperatures in Fahrenheit (101.57 °F = 38.65 °C, 94.86 °F = 34.92 °C)
+  device_name: CORE 4A
+  notification: "3F AD27 0E25 0000 13 00 27"
+  expect:
+    source_id: "core-body-temperature-connected:vector"
+    fields: { core_temperature: 38.65, skin_temperature: 34.92 }
+
+- name: skin not valid, so nothing after it is read
+  device_name: CORE 4A
+  notification: "36 190F 0000 2F00 21 8C 27"
+  expect:
+    source_id: "core-body-temperature-connected:vector"
+    fields: { core_temperature: 38.65 }
+    absent: [skin_temperature, heart_rate, heat_strain_index]
