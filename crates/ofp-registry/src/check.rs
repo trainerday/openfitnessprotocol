@@ -33,7 +33,13 @@ struct Vector {
     name: String,
     #[serde(default)]
     device_name: Option<String>,
+    /// An advertisement's manufacturer data (broadcast tables).
+    #[serde(default)]
     manufacturer_data: String,
+    /// One notification from the table's characteristic (notify tables): the device is announced,
+    /// used and connected first, as an app does.
+    #[serde(default)]
+    notification: Option<String>,
     expect: Expect,
 }
 
@@ -67,7 +73,7 @@ fn check_vectors(reg: &Registry, table: &str, path: &Path, errors: &mut Vec<Stri
     };
     for v in &vectors {
         let at = format!("{shown}: '{}'", v.name);
-        let data = match unhex(&v.manufacturer_data) {
+        let data = match unhex(v.notification.as_deref().unwrap_or(&v.manufacturer_data)) {
             Ok(d) => d,
             Err(e) => {
                 errors.push(format!("{at}: {e}"));
@@ -75,7 +81,23 @@ fn check_vectors(reg: &Registry, table: &str, path: &Path, errors: &mut Vec<Stri
             }
         };
         let mut core = reg.core();
-        let messages = core.on_advertisement(&Advertisement { device_id: "vector", name: v.device_name.as_deref(), rssi: None, manufacturer_data: &data, services: &[], now_ms: 0 });
+        let messages = match &v.notification {
+            None => core.on_advertisement(&Advertisement { device_id: "vector", name: v.device_name.as_deref(), rssi: None, manufacturer_data: &data, services: &[], now_ms: 0 }),
+            Some(_) => {
+                let Some(spec) = reg.bundle.tables.iter().find(|t| t.id == table).and_then(|t| t.notify.clone()) else {
+                    errors.push(format!("{at}: a notification vector needs a notify table"));
+                    continue;
+                };
+                let services = vec![spec.service.clone()];
+                core.on_advertisement(&Advertisement { device_id: "vector", name: v.device_name.as_deref(), rssi: None, manufacturer_data: &[], services: &services, now_ms: 0 });
+                if let Err(e) = core.use_source(&format!("{table}:vector"), 0) {
+                    errors.push(format!("{at}: {e}"));
+                    continue;
+                }
+                core.on_connected("vector", 0);
+                core.on_notification("vector", &spec.characteristic, &data, 1000)
+            }
+        };
         let values = messages.iter().find_map(|m| match m {
             Message::Values { source_id, fields, .. } => Some((source_id.clone(), values_of(fields))),
             _ => None,
@@ -466,9 +488,9 @@ mod tests {
     }
 
     #[test]
-    fn the_core_draft_decodes_a_notification_built_from_the_makers_specification() {
+    fn the_core_table_decodes_a_notification_built_from_the_makers_specification() {
         let reg = registry::load(&registry_dir()).unwrap();
-        assert!(reg.drafts.contains("core-body-temperature-connected"));
+        assert!(!reg.drafts.contains("core-body-temperature-connected"));
         // flags: skin, reserved, quality, heart rate and heat strain valid; core 37.25, skin 33.10, HR 142, HSI 2.3
         let lines = connected_capture("CORE 1234", "00002100-5b1e-4347-b07c-97b514dae121", "00002101-5b1e-4347-b07c-97b514dae121", &["37 8d0e ee0c 0000 24 8e 17"], &[]);
         let (source, v) = last_values(&reg, &lines);
