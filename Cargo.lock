@@ -2629,7 +2629,7 @@ dependencies = [
 
 [[package]]
 name = "ofp-capture"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "btleplug",
  "futures",
@@ -2641,7 +2641,7 @@ dependencies = [
 
 [[package]]
 name = "ofp-cli"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "clap",
  "crossterm",
@@ -2657,7 +2657,7 @@ dependencies = [
 
 [[package]]
 name = "ofp-core"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "serde",
  "serde_json",
@@ -2665,7 +2665,7 @@ dependencies = [
 
 [[package]]
 name = "ofp-ffi"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "ofp-core",
  "serde",
@@ -2674,7 +2674,7 @@ dependencies = [
 
 [[package]]
 name = "ofp-registry"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "ofp-capture",
  "ofp-core",
@@ -2685,7 +2685,7 @@ dependencies = [
 
 [[package]]
 name = "ofp-studio"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "axum",
  "futures",
@@ -2700,7 +2700,7 @@ dependencies = [
 
 [[package]]
 name = "ofp-studio-app"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "ofp-registry",
  "ofp-studio",
