@@ -17,6 +17,7 @@ fixes are folded into a last "Bug fixes and improvements". Notes for the next re
 - For table writers: vectors can now be a notification, for tables of devices that are connected to.
 - For app makers: the noble adapter passes the advertised services and names, so devices that are
   connected to are recognised.
+- Bug fixes and improvements.
 
 ## 0.2.2 (2026-11-20)
 
