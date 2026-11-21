@@ -160,7 +160,10 @@ file, which is what the core loads.
   the same?": a confirmed value must decode to exactly the same number from then on, and a value
   marked wrong fails the check until the table decodes what the display showed.
 - **Vectors** (`<table>.vectors.yaml`): single packets with known answers, for rules the capture
-  does not exercise (another unit, an older firmware, a packet that must be refused).
+  does not exercise (another unit, an older firmware, a packet that must be refused). A vector gives
+  `manufacturer_data` (an advertisement, broadcast tables) or `notification` (one notification from
+  the table's characteristic, notify tables: the device is announced, used and connected first).
+  A worked example from the maker's own documentation is a fair vector; it is not a capture.
 
 A table whose fields its author has confirmed is at the "Submitted" level below.
 

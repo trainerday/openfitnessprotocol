@@ -125,7 +125,10 @@ export function basic(fields) {
   };
 }
 
-/** Bluetooth company ids the registry's tables match on: what a filtered scan has to let through. */
+/**
+ * Bluetooth company ids the registry's tables match on: what a filtered scan has to let through. In numeric
+ * order, so the order does not move when a table is added (a scan that can filter on one id takes the first).
+ */
 export function companyIdsOf(bundleJson) {
   try {
     const ids = [];
@@ -134,7 +137,7 @@ export function companyIdsOf(bundleJson) {
         if (typeof rule.manufacturer_id === 'number' && !ids.includes(rule.manufacturer_id)) ids.push(rule.manufacturer_id);
       }
     }
-    return ids;
+    return ids.sort((a, b) => a - b);
   } catch {
     return [];
   }

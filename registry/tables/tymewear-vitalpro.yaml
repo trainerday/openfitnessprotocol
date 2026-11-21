@@ -2,15 +2,17 @@ id: tymewear-vitalpro
 name: Tymewear VitalPro breathing sensor
 reader: notify
 version: 1
-# Draft: written from a description of the protocol, not yet tried on a sensor.
-status: draft
+# Experimental: written from a description of the protocol, not yet tried on a sensor. The first
+# owner's recording becomes its capture.
+status: experimental
 
 provenance: >
   Facts in tymewear-vitalpro.spec.md, which were learned from studying the open-source readers
   k-breathe and Tyme4All (MIT). This table was written from that description only, not from their
-  code. The maker has published no specification.
+  code. The maker has published no specification. Re-checked on 2026-11-21 against k-breathe's
+  current Protocol.kt: the data is on 40B50004, the layout and scales as below, no handshake.
 verified_on:
-  - not verified on a sensor yet
+  - not verified on a sensor yet (vectors check this table's arithmetic only)
 
 # The breathing sensor of the chest strap ("TYME-xxxx"). The strap's heart-rate pod ("TymeHR …") is a
 # separate, ordinary heart-rate monitor and needs no table.
@@ -23,6 +25,9 @@ notify:
   characteristic: 40b50004-30b5-11e5-a151-feff819cdc90
   min_length: 17
 
+# The readers this was learned from also switch on notifications of 40B50001 and 40B50007. A table
+# subscribes to one characteristic; if the sensor sends nothing on 40B50004 without the others, the
+# first test with a sensor shows it.
 # Several kinds of packet arrive on this characteristic; byte 0 says which. Kind 1 is one breath:
 #   1-4    time stamp, 40 ms ticks
 #   5-6    inhale duration, hundredths of a second

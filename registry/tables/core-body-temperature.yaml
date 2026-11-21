@@ -2,21 +2,23 @@ id: core-body-temperature
 name: CORE body temperature
 reader: broadcast
 version: 1
-# Draft: written from the maker's documentation, not yet tried on a sensor. Its owner checks it in
-# the Studio (ofp studio → Live) and adds their recording; then it becomes experimental.
-status: draft
+# Experimental: written from the maker's documentation and its worked example, not yet tried on a
+# sensor. The first owner's recording becomes its capture.
+status: experimental
 
 provenance: >
-  greenTEG's published "CORE Connectivity Implementation Notes" (the sensor's advertisement, which
-  carries the current core temperature). No code from other projects.
+  greenTEG's published "CORE Connectivity Implementation Notes" v3.1 (2024-08-08), section 2.1, the
+  advertisement packet (github.com/CoreBodyTemp/CoreBodyTemp). This layout is the one from sensor
+  firmware 0.8.0 on. No code from other projects.
 verified_on:
-  - not verified on a sensor yet
+  - the maker's documented example advertisement (no sensor yet)
 
 # The sensor can be read without connecting: its advertisement carries the core temperature.
 # Payload after the 2-byte company id:
 #   0     version of this data (0)
 #   1     status: low four bits = state of the sensor (4 = measuring)
-#   2-3   core temperature, thousandths of a degree Celsius
+#   2-3   core temperature, thousandths of a degree Celsius (the notes' own example, B391, is 37.299;
+#         their footnote's "37.001" is a slip)
 match:
   - manufacturer_id: 0xF60B
     min_length: 4

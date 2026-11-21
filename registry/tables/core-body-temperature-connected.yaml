@@ -1,15 +1,19 @@
 id: core-body-temperature-connected
 name: CORE body temperature (connected)
 reader: notify
-version: 1
-# Draft: written from the maker's documentation, not yet tried on a sensor.
-status: draft
+version: 2
+# Experimental: written from the maker's specification and its worked example, not yet tried on a
+# sensor. The first owner's recording becomes its capture.
+status: experimental
 
 provenance: >
-  greenTEG's published "CoreTemp BLE Service Specification" (the Core Body Temperature
-  characteristic). No code from other projects.
+  greenTEG's published "CoreTemp BLE Service Specification" v2.2 (2024-07-04), section 3.1, and the
+  worked example in "CORE Connectivity Implementation Notes" v3.1, table 5
+  (github.com/CoreBodyTemp/CoreBodyTemp). The positions were compared with the MIT-licensed readers
+  in espruino/BangleApps (apps/coretemp), purpl3F0x/corebodytemp and swiftraccoon/CoreVitals; no code
+  was taken from them.
 verified_on:
-  - not verified on a sensor yet
+  - the maker's documented example notification (no sensor yet)
 
 # Connected, the sensor sends more than its advertisement does: skin temperature, the heart rate
 # it receives from a paired strap, and a heat strain index.
@@ -29,11 +33,14 @@ notify:
 #   3-4   skin temperature, hundredths of a degree, signed
 #   5-6   reserved
 #   7     quality and state
-#   8     heart rate, beats per minute
-#   9     heat strain index, tenths
-# TO CHECK ON A SENSOR: the specification marks the fields after the core temperature
-# "if present". This draft assumes they always keep these positions and the flags only say whether
-# each one is valid. If a field is left out when its flag is clear, the positions after it shift.
+#   8     heart rate, beats per minute (0 while the sensor receives no heart rate)
+#   9     heat strain index, tenths (sensor firmware 0.8.7 on; heart rate from 0.8.4 on)
+# The maker's example (all flags set) has exactly these positions. Whether a field whose flag is
+# clear is left out or kept in place is not settled: the specification calls the flags "valid",
+# its tables say "if present", and the open readers differ. Either way only the fields after a
+# missing one move, so a field is read only when the flags of every field before it are set: a
+# value can be missing in that state, never wrong. An older sensor's shorter packet gives no value
+# for what it does not send (a read past the end gives nothing).
 stale_after_ms: 15000
 
 fields:
@@ -45,7 +52,7 @@ fields:
     only_when: u8[0] & 1
   heart_rate:
     value: u8[8]
-    only_when: u8[0] & 16
+    only_when: (u8[0] & 0x17) == 0x17 && u8[8] > 0
   heat_strain_index:
     value: u8[9] / 10
-    only_when: u8[0] & 32
+    only_when: (u8[0] & 0x37) == 0x37

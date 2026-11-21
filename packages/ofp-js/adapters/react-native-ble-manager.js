@@ -36,7 +36,9 @@ export function advertisementsFrom(peripheral, companyIds) {
  * well enough. Spread them AFTER the app's own options: on iOS they replace two of them.
  *
  * Android: its filters are alternatives (a device passes if it matches any), and the library takes one
- * company id, so that id is added beside the app's services.
+ * company id, so that id is added beside the app's services: the first of `companyIds` (the lowest, today the
+ * Keiser M3i's). A broadcast device with another company id (a CORE as a beacon) is not let through on
+ * Android by this filter.
  *
  * iOS (`platform` 'ios'): there is no company-id filter, so the scan is opened to every device (an empty
  * service list) and repeats are asked for (without them iOS reports a device once, and for a broadcast-only

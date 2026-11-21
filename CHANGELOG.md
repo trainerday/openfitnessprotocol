@@ -7,6 +7,17 @@ How to write it: one line per thing a user would notice, new things first, at mo
 fixes are folded into a last "Bug fixes and improvements". Notes for the next release go under `## Next`;
 `scripts/release.sh` turns that heading into the version and date.
 
+## Next
+
+- CORE body temperature sensors, read from their advertisement (core temperature) or connected (also skin
+  temperature, the heart rate the sensor receives, and the heat strain index). From the maker's published
+  specification, waiting for owners to test them.
+- Tymewear VitalPro breathing sensors: breathing rate, tidal volume and minute ventilation, waiting for
+  owners to test them.
+- For table writers: vectors can now be a notification, for tables of devices that are connected to.
+- For app makers: the noble adapter passes the advertised services and names, so devices that are
+  connected to are recognised.
+
 ## 0.2.2 (2026-11-20)
 
 - Every number can be marked right or wrong, RR intervals too.
