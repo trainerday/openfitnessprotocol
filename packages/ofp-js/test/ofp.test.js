@@ -129,7 +129,7 @@ for (const [name, engine] of Object.entries(engines)) {
     let now = 5_000_000
     const ofp = new Ofp({ engine: engine(), bundle, tickMs: 0, now: () => now, reofferMs: 10_000, on: { device: (d) => seen.devices.push(d.id), radio: (r) => seen.radio.push(r) } })
     const hear = (o) => ofp.advertisement({ deviceId: 'u', name: 'M3', rssi: -61, manufacturerData: keiser(o) })
-    assert.deepEqual(ofp.companyIds, [0xF60B, 0x0102, 0x0645]) // CORE, Keiser, the test table
+    assert.deepEqual(ofp.companyIds, [0x0102, 0x0645, 0xF60B]) // Keiser, the test table, CORE: numeric order
     assert.equal(ofp.scanNeed(), null)
     hear()
     // heard, not in use: offered again every 10 s while it keeps being heard
