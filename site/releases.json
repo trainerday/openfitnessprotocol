@@ -1,5 +1,16 @@
 [
   {
+    "version": "0.2.3",
+    "date": "2026-11-21",
+    "files": {
+      "mac": {
+        "url": "https://openfitnessprotocol.org/download/mac/OFP-Studio-0.2.3-mac.dmg",
+        "size": 5193081,
+        "sha256": "bc7e97f67bf0afcb211f1d7d47f33dc372c9d9f2eeb388a7477c8a4fbc16a775"
+      }
+    }
+  },
+  {
     "version": "0.2.2",
     "date": "2026-11-20",
     "files": {
