@@ -7,7 +7,7 @@ How to write it: one line per thing a user would notice, new things first, at mo
 fixes are folded into a last "Bug fixes and improvements". Notes for the next release go under `## Next`;
 `scripts/release.sh` turns that heading into the version and date.
 
-## Next
+## 0.2.4 (2026-11-24)
 
 - Tymewear VitalPro: breathing rate and minute ventilation are now read correctly. They were shown at a
   quarter to an eighth of the real values (found with the first real sensor).
