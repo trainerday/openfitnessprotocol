@@ -109,7 +109,12 @@ fn main() {
                 .on_download(|webview, event| {
                     // a recording the person downloads: into their Downloads folder, under its own name
                     if let tauri::webview::DownloadEvent::Requested { url, destination } = event {
-                        let name = url.query_pairs().find(|(k, _)| k == "name").map(|(_, v)| v.into_owned()).unwrap_or_else(|| "recording.capture.jsonl".into());
+                        // only the last part of the name: `?name=../../x` or an absolute path stays in Downloads
+                        let name = url
+                            .query_pairs()
+                            .find(|(k, _)| k == "name")
+                            .and_then(|(_, v)| Path::new(v.as_ref()).file_name().map(|n| n.to_owned()))
+                            .unwrap_or_else(|| "recording.capture.jsonl".into());
                         if let Ok(dir) = webview.path().download_dir() {
                             *destination = dir.join(name);
                         }

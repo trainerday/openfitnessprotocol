@@ -76,7 +76,14 @@ struct Parser<'n> {
     pos: usize,
     /// The names of the table's layout parts, in order.
     parts: &'n [String],
+    /// How deep the parser is in nested `( )`, `?:`, `-` and `!` right now
+    depth: usize,
 }
+
+/// How deep the parser goes before it gives up. Far more than an expression may be (`within_limits`
+/// decides that, on the parsed tree), and small enough that a table full of `(((((` cannot overflow the
+/// stack of whoever parses it (the Studio does on worker threads).
+const MAX_PARSE_DEPTH: usize = ofp_core::MAX_EXPR_DEPTH * 4;
 
 fn bin(op: BinOp, a: Expr, b: Expr) -> Expr {
     Expr::Bin(op, Box::new(a), Box::new(b))
@@ -121,7 +128,22 @@ impl Parser<'_> {
         }
     }
 
+    /// One level deeper for `f`, or an error past [`MAX_PARSE_DEPTH`].
+    fn nested(&mut self, f: fn(&mut Self) -> Result<Expr, String>) -> Result<Expr, String> {
+        if self.depth >= MAX_PARSE_DEPTH {
+            return Err("the expression is nested too deeply".into());
+        }
+        self.depth += 1;
+        let e = f(self);
+        self.depth -= 1;
+        e
+    }
+
     fn ternary(&mut self) -> Result<Expr, String> {
+        self.nested(Self::ternary_here)
+    }
+
+    fn ternary_here(&mut self) -> Result<Expr, String> {
         let cond = self.or()?;
         if self.eat("?") {
             let a = self.ternary()?;
@@ -161,6 +183,10 @@ impl Parser<'_> {
     }
 
     fn unary(&mut self) -> Result<Expr, String> {
+        self.nested(Self::unary_here)
+    }
+
+    fn unary_here(&mut self) -> Result<Expr, String> {
         if self.eat("!") {
             return Ok(Expr::Not(Box::new(self.unary()?)));
         }
@@ -226,7 +252,7 @@ pub fn parse(src: &str) -> Result<Expr, String> {
 
 /// The same, in a table whose layout has these parts.
 pub fn parse_with(src: &str, parts: &[String]) -> Result<Expr, String> {
-    let mut p = Parser { toks: lex(src).map_err(|e| format!("'{src}': {e}"))?, pos: 0, parts };
+    let mut p = Parser { toks: lex(src).map_err(|e| format!("'{src}': {e}"))?, pos: 0, parts, depth: 0 };
     let e = p.ternary().map_err(|e| format!("'{src}': {e}"))?;
     if p.pos != p.toks.len() {
         return Err(format!("'{src}': unexpected text after the expression"));
@@ -278,5 +304,23 @@ mod tests {
         assert!(parse("1 2").is_err());
         assert!(parse("u8[1] $ 2").is_err());
         assert!(parse(&"(".repeat(40)).is_err());
+    }
+
+    #[test]
+    fn deep_nesting_is_an_error_not_a_stack_overflow() {
+        // run on a small stack, like a worker thread, so a recursion without a limit would show
+        std::thread::Builder::new()
+            .stack_size(1024 * 1024)
+            .spawn(|| {
+                for src in ["(".repeat(100_000), "-".repeat(100_000) + "1", "!".repeat(100_000) + "1", "1 ? ".repeat(50_000) + "1"] {
+                    let e = parse(&src).unwrap_err();
+                    assert!(e.contains("nested too deeply"), "{}", &e[e.len().saturating_sub(80)..]);
+                }
+                // what a real table writes still parses
+                assert!(parse("((u8[1] + 1) * (u8[2] - 1)) / 2").is_ok());
+            })
+            .unwrap()
+            .join()
+            .unwrap();
     }
 }

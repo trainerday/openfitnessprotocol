@@ -202,7 +202,8 @@ pub struct Registry {
     pub drafts: BTreeSet<String>,
 }
 
-fn key_ok(s: &str) -> bool {
+/// A field key: lower-case letters, digits and `_`, starting with a letter (it is also the file name).
+pub fn key_ok(s: &str) -> bool {
     !s.is_empty() && s.len() <= 40 && s.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_') && s.as_bytes()[0].is_ascii_lowercase()
 }
 

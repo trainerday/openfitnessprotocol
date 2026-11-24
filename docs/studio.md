@@ -110,13 +110,17 @@ the device (notes, confirmations) and presses Save.
 JSON over HTTP on the same address. `POST` bodies are JSON; errors come back as
 `{"error": "…"}` with status 400.
 
+Only this computer's own requests are answered: the `Host` must be `127.0.0.1`, `localhost` or
+`[::1]`, and a `POST` that carries an `Origin` must come from the Studio's own page. Anything else
+gets status 403. Tools such as `curl` (no `Origin`) work as before.
+
 | Request | What it does |
 |---|---|
 | `GET /api/guide` | The rules for adding to the registry (`AGENTS.md`) |
 | `GET /api/state` | Registry (fields with unit, range, tolerance, description; tables), radio status, the session |
 | `GET /api/devices` | Devices in range |
 | `GET /api/captures` | Capture files that can be opened |
-| `POST /api/session` | `{"device_id": …}` or `{"capture": "<path>"}`; `{}` closes the session |
+| `POST /api/session` | `{"device_id": …}` or `{"capture": "<file name>", "place": "captures" or "registry"}` (a name from `/api/captures`, not a path); `{}` closes the session |
 | `POST /api/record/start` | `{"connect": true}` to connect and record notifications; `{}` for adverts |
 | `POST /api/record/stop` | |
 | `POST /api/note` | `{"text": "power=150 cadence=82"}` (while recording) |

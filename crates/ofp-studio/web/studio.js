@@ -119,6 +119,34 @@ function renderSoon() {
   requestAnimationFrame(() => { framePending = false; renderLive(); });
 }
 
+/** The last part of a file path, on any system (`C:\\…\\x.jsonl` or `/…/x.jsonl`). */
+function baseName(path) {
+  return String(path).split(/[\\/]/).pop();
+}
+
+/** The open session's recording, as text. Refuses when the Studio answers with an error instead. */
+async function captureText() {
+  const res = await fetch('/api/capture/file', { cache: 'no-store' });
+  if (!res.ok) {
+    const j = await res.json().catch(() => ({}));
+    throw new Error(j.error || 'The recording could not be read.');
+  }
+  return res.text();
+}
+
+/** A `?<name>=<address>` override on the page (for testing). Only an address on this computer is taken, so a
+ *  link to the Studio cannot send recordings or update checks somewhere else. */
+function localOverride(name) {
+  const v = new URLSearchParams(location.search).get(name);
+  if (!v) return null;
+  try {
+    const u = new URL(v);
+    return u.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(u.hostname) ? v : null;
+  } catch {
+    return null;
+  }
+}
+
 function connectEvents() {
   const es = new EventSource('/api/events');
   // The stream reconnects by itself when the Studio was restarted. The session lives in the Studio, so
@@ -133,6 +161,8 @@ function connectEvents() {
   es.onmessage = guard(async (ev) => {
     const m = JSON.parse(ev.data);
     switch (m.type) {
+      // the page fell behind and events were dropped: ask for the whole state again
+      case 'reload': await reload(); break;
       case 'devices': S.devices = m.devices; if (S.tab === 'devices') renderDevicesTable(); if (!S.advanced) renderDeviceCards(); break;
       case 'packet':
         S.lastPacketAt = Date.now();
@@ -250,7 +280,7 @@ function viewRecordings() {
   const list = h('ul', { class: 'list' });
   for (const c of S.captures) {
     list.append(h('li', {}, h('span', { class: 'mono fill' }, c.name), h('span', { class: 'muted' }, c.kb + ' KB'), c.place === 'registry' ? h('span', { class: 'badge' }, 'ships with a table') : null,
-      h('button', { class: 'small', onclick: guard(async () => { await api('/api/session', { capture: c.path }); setTab('map'); }) }, 'Open')));
+      h('button', { class: 'small', onclick: guard(async () => { await api('/api/session', { capture: c.name, place: c.place }); setTab('map'); }) }, 'Open')));
   }
   caps.append(list);
   wrap.append(caps);
@@ -896,10 +926,10 @@ function viewLive() {
   if (s.from_file) head.append(h('p', { class: 'problem' }, 'This is a capture file. Live values need the device: choose it in Devices.'));
   else if (!s.recording) {
     // Stopped: the recording is already saved (it is written as it happens). Say where, and offer it.
-    const file = s.file ? s.file.split('/').pop() : null;
+    const file = s.file ? baseName(s.file) : null;
     head.append(h('div', { class: 'row' },
       file ? h('span', { class: 'good' }, '✓ Saved as ' + file) : h('span', { class: 'muted' }, 'Stopped.'),
-      file ? h('a', { class: 'btn', href: '/api/capture/file', download: '' }, 'Download it to send') : null,
+      file ? h('a', { class: 'btn', href: '/api/capture/file?name=' + encodeURIComponent(file), download: file }, 'Download it to send') : null,
       h('button', { class: 'primary', onclick: guard(async () => { await api('/api/record/start', {}); await reload(); }) }, 'Start again (a new recording)')));
   } else {
     head.append(h('div', { class: 'row' }, h('span', { class: 'dot rec' }), h('span', {}, 'Recording what the device sends'),
@@ -1111,7 +1141,7 @@ function showingLive() {
 }
 
 /** Where "Send to OFP" goes. `?submit=<url>` on the page points it elsewhere (for testing). */
-const SUBMIT = new URLSearchParams(location.search).get('submit') || 'https://openfitnessprotocol.org/api/submit';
+const SUBMIT = localOverride('submit') || 'https://openfitnessprotocol.org/api/submit';
 
 /** In the simple Studio: the device list ('connect') or the device being read ('check'). Going to the list
  *  does not disconnect: the device keeps recording until another one is connected. */
@@ -1202,8 +1232,8 @@ const sendRecording = guard(async (c, button) => {
   button.disabled = true;
   button.textContent = 'Sending…';
   try {
-    await api('/api/session', { capture: c.path });
-    const recording = await (await fetch('/api/capture/file', { cache: 'no-store' })).text();
+    await api('/api/session', { capture: c.name, place: c.place });
+    const recording = await captureText();
     const d = describeRecording(c.name);
     if (c.device) d.device = c.device;
     const r = await fetch(SUBMIT, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ recording, comment: '', email: '', version: S.state && S.state.version, device: d.device, read_as: 'sent later from My recordings' }) });
@@ -1393,10 +1423,13 @@ function viewCheck(s) {
     button.textContent = 'Sending…';
     try {
       // the comment goes into the recording too, with the time, while it is still recording
-      if (comment.value.trim()) await api('/api/note', { text: 'COMMENT: ' + comment.value.trim() }).catch(() => {});
-      if (make.value.trim() || model.value.trim()) await api('/api/note', { text: `DEVICE: make=${make.value.trim()} model=${model.value.trim()}` }).catch(() => {});
+      // (they are also sent next to the recording, so a note that fails loses nothing: say so and go on)
+      const noteFailed = (e) => toast('The comment could not be written into the recording (it is still sent with it): ' + e.message, true);
+      const stillRecording = session() && session().recording;
+      if (stillRecording && comment.value.trim()) await api('/api/note', { text: 'COMMENT: ' + comment.value.trim() }).catch(noteFailed);
+      if (stillRecording && (make.value.trim() || model.value.trim())) await api('/api/note', { text: `DEVICE: make=${make.value.trim()} model=${model.value.trim()}` }).catch(noteFailed);
       if (session() && session().recording) await api('/api/record/stop', {});
-      const recording = await (await fetch('/api/capture/file', { cache: 'no-store' })).text();
+      const recording = await captureText();
       const src = S.live.source;
       const r = await fetch(SUBMIT, {
         method: 'POST',
@@ -1410,7 +1443,7 @@ function viewCheck(s) {
       const works = confirms.some((c) => c.ok) && !confirms.some((c) => !c.ok);
       S.sent = { code: j.code, name: [make.value.trim(), model.value.trim()].filter(Boolean).join(' ') || s.name, works };
       const sentFile = session() && session().file;
-      if (sentFile) rememberSent(sentFile.split('/').pop(), j.code);
+      if (sentFile) rememberSent(baseName(sentFile), j.code);
       await reload();
     } catch (e) {
       button.disabled = false;
@@ -1463,7 +1496,7 @@ function viewSent() {
 // ───────────────────────── version, and a newer release ─────────────────────────
 
 /** Where releases are published. `?updates=<url>` points the check elsewhere (for testing the banner). */
-const RELEASES = new URLSearchParams(location.search).get('updates') || 'https://openfitnessprotocol.org/download/latest.json';
+const RELEASES = localOverride('updates') || 'https://openfitnessprotocol.org/download/latest.json';
 
 /** 1 when a is newer than b ("0.10.0" > "0.9.3"), -1 when older, 0 when the same. */
 function compareVersions(a, b) {
@@ -1490,7 +1523,7 @@ async function checkForUpdate() {
       h('span', {}, h('b', {}, `OFP Studio ${latest.version} is available.`), ` You have ${mine}.`),
       // A browser opens a tab; the app's window has none, and sends any address that is not the Studio's
       // to the computer's browser instead (its navigation handler).
-      h('button', { class: 'small primary', onclick: () => { const url = latest.page || latest.url; if (!window.open(url, '_blank')) location.href = url; } }, 'Download'),
+      h('button', { class: 'small primary', onclick: () => { const url = String(latest.page || latest.url || ''); if (!/^https:\/\//i.test(url)) return; if (!window.open(url, '_blank')) location.href = url; } }, 'Download'),
       h('button', { class: 'small ghost', onclick: () => { b.hidden = true; } }, 'Later'));
   } catch {
     // offline, or the site is down: say nothing

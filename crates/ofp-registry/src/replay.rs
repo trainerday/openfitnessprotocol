@@ -92,13 +92,17 @@ pub fn replay(core: &mut Core, lines: &[Line]) -> Result<Collector, String> {
     }
     for line in lines {
         let t = line.t();
-        if t > next_tick + 60_000 {
-            c.take(core.tick(next_tick + 30_000));
+        // (lines built in memory are not limited like a file read: no overflow at the largest times)
+        if t > next_tick.saturating_add(60_000) {
+            c.take(core.tick(next_tick.saturating_add(30_000)));
             next_tick = t - t % 1000;
         }
         while next_tick <= t {
             c.take(core.tick(next_tick));
-            next_tick += 1000;
+            match next_tick.checked_add(1000) {
+                Some(n) => next_tick = n,
+                None => break,
+            }
         }
         c.stats.duration_ms = c.stats.duration_ms.max(t);
         if let Line::Packet { kind, name, rssi, mfr, chr, data, .. } = line {
@@ -126,4 +130,25 @@ pub fn replay(core: &mut Core, lines: &[Line]) -> Result<Collector, String> {
         }
     }
     Ok(c)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ofp_capture::{header, DeviceInfo};
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn the_largest_times_end_the_replay_instead_of_hanging_it() {
+        let reg = crate::registry::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../registry")).unwrap();
+        let lines = vec![
+            header("test", DeviceInfo::default(), vec![]),
+            Line::adv(1000, None, None, &[2, 1], BTreeMap::new()),
+            Line::adv(u64::MAX - 1, None, None, &[2, 1], BTreeMap::new()),
+            Line::adv(u64::MAX, None, None, &[2, 1], BTreeMap::new()),
+            Line::adv(5, None, None, &[2, 1], BTreeMap::new()),
+        ];
+        let c = replay(&mut reg.core(), &lines).unwrap();
+        assert_eq!(c.stats.adverts, 4);
+    }
 }

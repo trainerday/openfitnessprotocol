@@ -2,7 +2,7 @@
 
 use crate::studio::{Config, FieldReq, ProposeReq, Reply, Studio};
 use axum::extract::{Query, State};
-use axum::http::{header, StatusCode};
+use axum::http::{header, HeaderMap, Method, StatusCode};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -23,6 +23,10 @@ const JS: &str = include_str!("../web/studio.js");
 const TESTER_JS: &str = include_str!("../web/tester.js");
 /// The rules for adding to the registry, as an LLM or a person should read them.
 const GUIDE: &str = include_str!("../../../AGENTS.md");
+
+/// How long a connection may take before the radio gives up and goes back to scanning.
+#[cfg(feature = "ble")]
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
 
 pub enum Radio {
     Connect(String),
@@ -54,8 +58,12 @@ struct NameReq {
 struct SessionReq {
     #[serde(default)]
     device_id: Option<String>,
+    /// A recording's file name, as `/api/captures` lists it (never a path)
     #[serde(default)]
-    capture: Option<PathBuf>,
+    capture: Option<String>,
+    /// Where it is: `captures` (the default) or `registry`
+    #[serde(default)]
+    place: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -114,8 +122,48 @@ struct ConfirmReq {
 }
 
 async fn events(State(app): State<App>) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
-    let stream = BroadcastStream::new(app.studio.events.subscribe()).filter_map(|m| async move { m.ok().map(|s| Ok(Event::default().data(s))) });
+    // A page that fell behind loses events (the channel drops the oldest): tell it to read the state again
+    let stream = BroadcastStream::new(app.studio.events.subscribe()).map(|m| {
+        Ok(match m {
+            Ok(s) => Event::default().data(s),
+            Err(_lagged) => Event::default().data(r#"{"type":"reload"}"#),
+        })
+    });
     Sse::new(stream).keep_alive(KeepAlive::default())
+}
+
+/// Is this host name (from a `Host` header, with or without a port) this computer?
+fn local_host(host: &str) -> bool {
+    let name = match host.strip_prefix('[') {
+        Some(rest) => rest.split(']').next().unwrap_or(""),
+        None => host.rsplit_once(':').map_or(host, |(name, _)| name),
+    };
+    matches!(name.to_ascii_lowercase().as_str(), "127.0.0.1" | "localhost" | "::1")
+}
+
+/// Only the Studio's own page may use the API. Binding to 127.0.0.1 is not enough on its own: a web page
+/// whose host name is re-pointed at 127.0.0.1 (DNS rebinding) would be same-origin with the Studio, and any
+/// page can send a plain POST with no body. So the `Host` must name this computer, and a request that
+/// changes something must not come from another page (`Origin`, which browsers send on every cross-site POST).
+fn request_is_ours(method: &Method, headers: &HeaderMap) -> bool {
+    let Some(host) = headers.get(header::HOST).and_then(|v| v.to_str().ok()) else { return false };
+    if !local_host(host) {
+        return false;
+    }
+    if method == Method::GET || method == Method::HEAD {
+        return true;
+    }
+    match headers.get(header::ORIGIN) {
+        None => true,
+        Some(origin) => origin.to_str().is_ok_and(|o| o.eq_ignore_ascii_case(&format!("http://{host}"))),
+    }
+}
+
+async fn only_ours(req: axum::extract::Request, next: axum::middleware::Next) -> Response {
+    if !request_is_ours(req.method(), req.headers()) {
+        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Only the Studio's own page can use this address." }))).into_response();
+    }
+    next.run(req).await
 }
 
 fn text(kind: &'static str, body: &'static str) -> Response {
@@ -162,7 +210,7 @@ pub fn router(studio: Arc<Studio>, radio: mpsc::UnboundedSender<Radio>, has_radi
                 let _ = a.studio.record_stop();
                 reply(match (r.device_id, r.capture) {
                     (Some(id), _) => a.studio.open_device(&id),
-                    (None, Some(path)) => a.studio.open_capture(&path),
+                    (None, Some(name)) => a.studio.open_saved(&name, r.place.as_deref().unwrap_or("captures")),
                     (None, None) => a.studio.close(),
                 })
             }),
@@ -208,6 +256,7 @@ pub fn router(studio: Arc<Studio>, radio: mpsc::UnboundedSender<Radio>, has_radi
         )
         .route("/api/save", post(|State(a): State<App>, Json(r): Json<YamlReq>| async move { reply(a.studio.save(&r.yaml, r.overwrite)) }))
         .layer(axum::extract::DefaultBodyLimit::max(64 * 1024 * 1024))
+        .layer(axum::middleware::from_fn(only_ours))
         .with_state(app)
 }
 
@@ -249,7 +298,29 @@ async fn radio_task(studio: Arc<Studio>, mut commands: mpsc::UnboundedReceiver<R
         let peripheral = scanner.peripheral(&device_id).await;
         scanner.stop().await;
         let connection = match peripheral {
-            Ok(p) => ble::connect(p).await,
+            // A device that never answers must not hold the radio: give up after a while, or when the
+            // person stops or chooses something else meanwhile (and leave the device disconnected).
+            Ok(p) => {
+                let attempt = ble::connect(p.clone());
+                tokio::pin!(attempt);
+                let deadline = tokio::time::sleep(CONNECT_TIMEOUT);
+                tokio::pin!(deadline);
+                let outcome = loop {
+                    tokio::select! {
+                        c = &mut attempt => break c,
+                        _ = &mut deadline => break Err(format!("the device did not answer in {} s", CONNECT_TIMEOUT.as_secs())),
+                        cmd = commands.recv() => match cmd {
+                            Some(Radio::Disconnect) | None => break Err("stopped".into()),
+                            Some(Radio::Connect(_)) => {}
+                            Some(Radio::Write(chr, bytes, _)) => studio.on_write(&chr, &bytes, Some("not connected yet".into())),
+                        },
+                    }
+                };
+                if outcome.is_err() {
+                    ble::disconnect(&p).await;
+                }
+                outcome
+            }
             Err(e) => Err(e),
         };
         match connection {
@@ -258,8 +329,11 @@ async fn radio_task(studio: Arc<Studio>, mut commands: mpsc::UnboundedReceiver<R
                 let _ = studio.record_stop();
                 tokio::time::sleep(Duration::from_secs(2)).await;
             }
+            Ok(c) if !studio.on_connected(&device_id, c.gatt.clone(), c.reads.clone(), c.subscribed.clone()) => {
+                // the person moved on while it was connecting
+                ble::disconnect(&c.peripheral).await;
+            }
             Ok(mut c) => {
-                studio.on_connected(c.gatt.clone(), c.reads.clone(), c.subscribed.clone());
                 studio.set_radio("connected");
                 loop {
                     tokio::select! {
@@ -302,12 +376,23 @@ pub struct Options {
     pub any_port: bool,
 }
 
-/// Open an address in the computer's default browser.
+/// Is this an address a browser should open (`http` or `https`, nothing a shell could read as more)?
+fn web_address(url: &str) -> bool {
+    let lower = url.to_ascii_lowercase();
+    (lower.starts_with("http://") || lower.starts_with("https://")) && !url.chars().any(|c| c.is_control() || c == '"')
+}
+
+/// Open an address in the computer's default browser. Only `http` and `https` addresses: anything else
+/// (`file:`, an app's own scheme) is not handed to the system.
 pub fn open_browser(url: &str) {
+    if !web_address(url) {
+        return;
+    }
     let (cmd, args): (&str, Vec<&str>) = if cfg!(target_os = "macos") {
         ("/usr/bin/open", vec![url])
     } else if cfg!(target_os = "windows") {
-        ("cmd", vec!["/C", "start", "", url])
+        // not `cmd /C start`: cmd reads `&` in an address as the start of another command
+        ("rundll32", vec!["url.dll,FileProtocolHandler", url])
     } else {
         ("xdg-open", vec![url])
     };
@@ -413,8 +498,12 @@ mod tests {
     use std::io::{Read, Write};
 
     fn get(port: u16, path: &str) -> String {
+        raw(port, &format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n"))
+    }
+
+    fn raw(port: u16, request: &str) -> String {
         let mut s = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
-        write!(s, "GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n").unwrap();
+        s.write_all(request.as_bytes()).unwrap();
         let mut out = String::new();
         s.read_to_string(&mut out).unwrap();
         out
@@ -423,6 +512,59 @@ mod tests {
     fn options(dir: &std::path::Path, port: u16, any_port: bool) -> Options {
         let registry = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../registry");
         Options { config: Config { registry, captures: dir.join("captures") }, port, open: false, capture: None, any_port }
+    }
+
+    #[test]
+    fn only_web_addresses_are_opened() {
+        assert!(web_address("https://github.com/trainerday/openfitnessprotocol/issues/new?title=a&body=b"));
+        assert!(web_address("http://127.0.0.1:4747"));
+        for u in ["file:///etc/passwd", "javascript:alert(1)", "ms-settings:", "vscode://x", "https://x\n", ""] {
+            assert!(!web_address(u), "{u}");
+        }
+    }
+
+    #[test]
+    fn host_names_of_this_computer() {
+        for h in ["127.0.0.1", "127.0.0.1:4747", "localhost:4747", "LOCALHOST", "[::1]:4747"] {
+            assert!(local_host(h), "{h}");
+        }
+        for h in ["evil.example", "evil.example:4747", "localhost.evil.example:4747", "127.0.0.1.evil.example", "[::2]:4747", ""] {
+            assert!(!local_host(h), "{h}");
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn only_the_studios_own_page_can_use_the_api() {
+        let dir = std::env::temp_dir().join(format!("ofp-studio-origin-{}", std::process::id()));
+        let running = start(options(&dir, 0, false)).await.unwrap();
+        let port = running.port;
+        let answers = tokio::task::spawn_blocking(move || {
+            let post = |host: &str, origin: Option<&str>| {
+                let origin = origin.map(|o| format!("Origin: {o}\r\n")).unwrap_or_default();
+                raw(port, &format!("POST /api/record/stop HTTP/1.1\r\nHost: {host}\r\n{origin}Content-Length: 0\r\nConnection: close\r\n\r\n"))
+            };
+            let ours = format!("127.0.0.1:{port}");
+            vec![
+                // a re-pointed host name (DNS rebinding): refused, reads included
+                ("rebound GET", raw(port, &format!("GET /api/state HTTP/1.1\r\nHost: evil.example:{port}\r\nConnection: close\r\n\r\n")), "403"),
+                ("rebound POST", post(&format!("evil.example:{port}"), None), "403"),
+                // another page posting to the Studio: refused
+                ("cross-site POST", post(&ours, Some("http://evil.example")), "403"),
+                ("null origin POST", post(&ours, Some("null")), "403"),
+                ("other local port", post(&ours, Some("http://127.0.0.1:1")), "403"),
+                // the Studio's own page, and tools such as curl (no Origin)
+                // (stop answers 400 "nothing is being recorded": the request reached it)
+                ("own page", post(&ours, Some(&format!("http://{ours}"))), "400"),
+                ("no origin", post(&ours, None), "400"),
+                ("own GET", get(port, "/api/state"), "200"),
+            ]
+        })
+        .await
+        .unwrap();
+        for (what, answer, status) in answers {
+            assert!(answer.starts_with(&format!("HTTP/1.1 {status}")), "{what}: {answer}");
+        }
+        running.stop().await.unwrap();
     }
 
     #[tokio::test(flavor = "multi_thread")]

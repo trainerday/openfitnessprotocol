@@ -42,8 +42,9 @@ pub fn inspect(lines: &[Line]) -> String {
 
     for (name, packets) in &streams {
         let n = packets.len();
-        let span = (packets.last().map(|p| p.0).unwrap_or(0) - packets.first().map(|p| p.0).unwrap_or(0)).max(1) as f64 / 60000.0;
-        let gap = packets.windows(2).map(|w| w[1].0 - w[0].0).max().unwrap_or(0);
+        // (times from a file someone sent: out of order is possible, so no plain subtraction)
+        let span = packets.last().map(|p| p.0).unwrap_or(0).saturating_sub(packets.first().map(|p| p.0).unwrap_or(0)).max(1) as f64 / 60000.0;
+        let gap = packets.windows(2).map(|w| w[1].0.saturating_sub(w[0].0)).max().unwrap_or(0);
         let lens: BTreeSet<usize> = packets.iter().map(|p| p.1.len()).collect();
         out.push_str(&format!(
             "\n{name}: {n} packets, {:.0}/min, longest gap {:.1} s, length {} bytes\n",
@@ -95,4 +96,23 @@ pub fn inspect(lines: &[Line]) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ofp_capture::{header, DeviceInfo};
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn times_out_of_order_or_huge_do_not_panic() {
+        let lines = vec![
+            header("test", DeviceInfo::default(), vec![]),
+            Line::adv(5000, None, None, &[1, 2], BTreeMap::new()),
+            Line::adv(10, None, None, &[1, 3], BTreeMap::new()),
+            Line::adv(u64::MAX, None, None, &[1, 4], BTreeMap::new()),
+            Line::adv(0, None, None, &[1, 5], BTreeMap::new()),
+        ];
+        assert!(inspect(&lines).contains("4 packets"));
+    }
 }

@@ -70,7 +70,7 @@ pub fn solve(samples: &[Sample], notes: &[(u64, f64)], tolerance: Tolerance, ran
     // The packets around each note, found once.
     let windows: Vec<Vec<usize>> = notes
         .iter()
-        .map(|(t, _)| samples.iter().enumerate().filter(|(_, s)| s.t + BEFORE_MS >= *t && s.t <= *t + AFTER_MS).map(|(i, _)| i).collect())
+        .map(|(t, _)| samples.iter().enumerate().filter(|(_, s)| s.t.saturating_add(BEFORE_MS) >= *t && s.t <= t.saturating_add(AFTER_MS)).map(|(i, _)| i).collect())
         .collect();
 
     // (candidate, stays in the plausible range, order of preference)

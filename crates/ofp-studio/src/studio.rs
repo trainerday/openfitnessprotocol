@@ -335,9 +335,7 @@ impl Studio {
 
     /// One saved recording, by its file name, from the captures folder only (a name with a path in it is refused).
     pub fn saved_recording(&self, name: &str) -> Result<String, String> {
-        if name.contains('/') || name.contains('\\') || name.contains("..") || !name.ends_with(".capture.jsonl") {
-            return Err("Not a recording's name.".into());
-        }
+        recording_name_ok(name)?;
         std::fs::read_to_string(self.cfg.captures.join(name)).map_err(|_| format!("{name}: no such recording"))
     }
 
@@ -379,6 +377,19 @@ impl Studio {
         Ok(v)
     }
 
+    /// Open a recording from the list, by its file name and its place (`captures` or `registry`), never a path:
+    /// the page can open only what [`Studio::captures_json`] lists.
+    pub fn open_saved(&self, name: &str, place: &str) -> Reply {
+        recording_name_ok(name)?;
+        let dir = match place {
+            "captures" => self.cfg.captures.clone(),
+            "registry" => self.cfg.registry.join("tables"),
+            _ => return Err(format!("'{place}' is not a place recordings are kept (captures or registry).")),
+        };
+        self.open_capture(&dir.join(name))
+    }
+
+    /// A recording from a path on this computer (the command line's `--capture`, and tests).
     pub fn open_capture(&self, path: &Path) -> Reply {
         let lines = ofp_capture::read_file(path)?;
         let name = match lines.first() {
@@ -781,6 +792,10 @@ impl Studio {
     pub fn add_field(&self, f: FieldReq) -> Reply {
         let registry = self.registry()?;
         let key = f.key.trim();
+        // The key is also the file name: check it before it goes into a path or the YAML
+        if !registry::key_ok(key) {
+            return Err(format!("'{key}' cannot be a key: lower-case letters, digits and _, starting with a letter, at most 40."));
+        }
         if registry.bundle.field(key).is_some() {
             return Err(format!("A field '{key}' already exists."));
         }
@@ -976,10 +991,17 @@ impl Studio {
         }
     }
 
-    /// The device was connected: what it offers, and what could be read.
-    pub fn on_connected(&self, gatt: Vec<GattService>, reads: Vec<(String, Vec<u8>)>, subscribed: Vec<String>) {
+    /// The device was connected: what it offers, and what could be read. Taken only when the open session is
+    /// still that device, recording from the radio: a connection that completes after the person moved on (to
+    /// another device, or a saved recording) must not write into it. Returns whether it was taken; when it was
+    /// not, the caller disconnects.
+    pub fn on_connected(&self, device_id: &str, gatt: Vec<GattService>, reads: Vec<(String, Vec<u8>)>, subscribed: Vec<String>) -> bool {
         let mut out = Vec::new();
         let mut st = self.state.lock().unwrap();
+        let ours = st.session.as_ref().is_some_and(|s| !s.from_file && s.recording && s.connect && s.device_id.as_deref() == Some(device_id));
+        if !ours {
+            return false;
+        }
         if let Some(s) = st.session.as_mut() {
             if let Some(Line::Header { gatt: g, .. }) = s.lines.first_mut() {
                 *g = gatt.clone();
@@ -1004,6 +1026,7 @@ impl Studio {
         for v in out {
             self.emit(v);
         }
+        true
     }
 
     pub fn on_notify(&self, chr: &str, value: &[u8]) {
@@ -1211,9 +1234,31 @@ fn yaml_text(s: &str) -> String {
     format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', " "))
 }
 
+/// A recording's file name, with no path in it.
+fn recording_name_ok(name: &str) -> Result<(), String> {
+    if name.contains('/') || name.contains('\\') || name.contains("..") || !name.ends_with(".capture.jsonl") {
+        return Err("Not a recording's name.".into());
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_field_key_or_a_recording_name_cannot_leave_its_folder() {
+        let (s, dir, _) = studio("names", true);
+        for key in ["../../x", "../x", "a\nid: 1", "Power", "x/y", ""] {
+            let f = FieldReq { key: key.into(), name: "X".into(), unit: String::new(), ty: "int".into(), decimals: 0, min: 0.0, max: 1.0, kind: "instantaneous".into(), description: "x".into(), confirm_new: true };
+            assert!(s.add_field(f).is_err(), "{key:?}");
+        }
+        assert!(!dir.join("x.yaml").exists() && !dir.join("registry/x.yaml").exists());
+        for (name, place) in [("../../etc/passwd", "captures"), ("../registry/tables/keiser-m3i.capture.jsonl", "captures"), ("/etc/x.capture.jsonl", "captures"), ("keiser-m3i.capture.jsonl", "/tmp")] {
+            assert!(s.open_saved(name, place).is_err(), "{name} in {place}");
+        }
+        s.open_saved("keiser-m3i.capture.jsonl", "registry").unwrap();
+    }
 
     /// A Studio on a copy of the real registry, without the Keiser table (so the device is "new").
     fn studio(name: &str, keep_table: bool) -> (Studio, PathBuf, PathBuf) {
@@ -1383,6 +1428,30 @@ mod tests {
     }
 
     #[test]
+    fn a_connection_that_completes_late_does_not_write_into_the_session_opened_since() {
+        use ofp_capture::{GattCharacteristic, GattService};
+        let (s, dir, capture) = studio("late", true);
+        s.on_adv(AdvIn { device_id: "dev-t".into(), name: Some("TYME-1A2B".into()), rssi: Some(-55), ..Default::default() });
+        s.open_device("dev-t").unwrap();
+        s.record_start(None).unwrap();
+        // the person gives up and opens a saved recording; the connection then completes
+        s.record_stop().unwrap();
+        s.open_capture(&capture).unwrap();
+        let before = std::fs::read_to_string(&capture).unwrap();
+        let gatt = vec![GattService { uuid: "fff0".into(), characteristics: vec![GattCharacteristic { uuid: "fff4".into(), properties: vec!["notify".into()] }] }];
+        assert!(!s.on_connected("dev-t", gatt.clone(), vec![("2a29".into(), b"x".to_vec())], vec!["fff4".into()]));
+        assert_eq!(std::fs::read_to_string(&capture).unwrap(), before, "the opened file is unchanged");
+        // nor into another device's recording
+        s.on_adv(AdvIn { device_id: "dev-u".into(), name: Some("TYME-9999".into()), rssi: Some(-55), ..Default::default() });
+        s.open_device("dev-u").unwrap();
+        s.record_start(None).unwrap();
+        assert!(!s.on_connected("dev-t", gatt.clone(), vec![], vec![]));
+        assert!(s.on_connected("dev-u", gatt, vec![], vec![]));
+        s.record_stop().unwrap();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn a_bike_that_needs_start_and_poll_frames_gets_them_written_after_connecting() {
         use ofp_capture::{GattCharacteristic, GattService};
         let (s, dir, _) = studio("polled", true);
@@ -1395,7 +1464,7 @@ mod tests {
         // nothing to write before the connection
         assert!(s.poll_tick().is_empty());
         let chr = |u: &str| GattCharacteristic { uuid: u.into(), properties: vec!["notify".into(), "write".into()] };
-        s.on_connected(vec![GattService { uuid: "fff0".into(), characteristics: vec![chr("fff4"), chr("fff1")] }], vec![], vec!["fff4".into()]);
+        assert!(s.on_connected("dev-p", vec![GattService { uuid: "fff0".into(), characteristics: vec![chr("fff4"), chr("fff1")] }], vec![], vec!["fff4".into()]));
         let w = s.poll_tick();
         assert_eq!(w.first().map(|x| x.1.clone()), Some(vec![0xf0, 0xa0, 0x01]), "the start frame first: {w:?}");
         assert!(w.iter().any(|x| x.1 == vec![0xf0, 0xa1]), "then the first poll: {w:?}");
@@ -1422,13 +1491,13 @@ mod tests {
         s.open_device("dev-t").unwrap();
         let (_, connect_to) = s.record_start(None).unwrap();
         assert_eq!(connect_to.as_deref(), Some("dev-t"));
-        s.on_connected(vec![GattService { uuid: SERVICE.into(), characteristics: vec![GattCharacteristic { uuid: CHR.into(), properties: vec!["notify".into()] }] }], vec![], vec![CHR.into()]);
-        // one breath: 15 breaths/min, 1.80 L, 27 L/min
-        let breath = ofp_capture::unhex("01 10000000 9600 fa00 b400 b400 0000 0000").unwrap();
+        assert!(s.on_connected("dev-t", vec![GattService { uuid: SERVICE.into(), characteristics: vec![GattCharacteristic { uuid: CHR.into(), properties: vec!["notify".into()] }] }], vec![], vec![CHR.into()]));
+        // one breath: 35 breaths/min, 1.80 L, 63 L/min
+        let breath = ofp_capture::unhex("01 10000000 5e01 5e01 b400 b400 3f00 3f00").unwrap();
         s.on_notify(CHR, &breath);
         let st = s.state_json();
-        assert_eq!(st["session"]["live"]["values"]["breathing_rate"], 15.0, "{}", st["session"]["live"]);
-        assert_eq!(st["session"]["live"]["values"]["minute_ventilation"], 27.0);
+        assert_eq!(st["session"]["live"]["values"]["breathing_rate"], 35.0, "{}", st["session"]["live"]);
+        assert_eq!(st["session"]["live"]["values"]["minute_ventilation"], 63.0);
         // the owner says the volume is wrong and what they saw
         assert_eq!(s.confirm("tidal_volume", Some(0.9), true).unwrap()["ok"], false);
         s.record_stop().unwrap();

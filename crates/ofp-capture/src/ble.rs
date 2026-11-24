@@ -160,6 +160,17 @@ pub struct Connection {
 /// notifies. Nothing is written to the device here; [`write`] does that, only when asked.
 pub async fn connect(peripheral: Peripheral) -> Result<Connection, String> {
     peripheral.connect().await.map_err(err("could not connect"))?;
+    // Connected from here: a step that fails disconnects, or the device stays connected (and stops advertising)
+    match connected(peripheral.clone()).await {
+        Ok(c) => Ok(c),
+        Err(e) => {
+            disconnect(&peripheral).await;
+            Err(e)
+        }
+    }
+}
+
+async fn connected(peripheral: Peripheral) -> Result<Connection, String> {
     peripheral.discover_services().await.map_err(err("could not list the services"))?;
     let mut gatt = Vec::new();
     let mut reads = Vec::new();

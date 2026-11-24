@@ -9,6 +9,9 @@ use std::io::{BufRead, Write};
 
 pub const FORMAT: &str = "ofp-capture";
 pub const FORMAT_VERSION: u32 = 1;
+/// The latest time a line may have, in ms from the start: a week. Recordings come from strangers too, and
+/// the tools step through time, so a time near the largest number would hang or overflow them.
+pub const MAX_T_MS: u64 = 7 * 24 * 3600 * 1000;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct DeviceInfo {
@@ -176,7 +179,11 @@ pub fn read<R: BufRead>(r: R) -> Result<Vec<Line>, String> {
         if l.trim().is_empty() {
             continue;
         }
-        lines.push(serde_json::from_str(&l).map_err(|e| format!("line {}: {e}", i + 1))?);
+        let line: Line = serde_json::from_str(&l).map_err(|e| format!("line {}: {e}", i + 1))?;
+        if line.t() > MAX_T_MS {
+            return Err(format!("line {}: time {} ms is past a week from the start", i + 1, line.t()));
+        }
+        lines.push(line);
     }
     match lines.first() {
         Some(Line::Header { format, version, .. }) if format == FORMAT && *version == FORMAT_VERSION => Ok(lines),
@@ -215,6 +222,16 @@ pub fn now_iso() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_time_past_a_week_is_refused_with_its_line() {
+        let head = serde_json::to_string(&header("test", DeviceInfo::default(), vec![])).unwrap();
+        let ok = format!("{head}\n{{\"type\":\"packet\",\"t\":604800000,\"kind\":\"adv\"}}\n");
+        assert!(read(ok.as_bytes()).is_ok());
+        let bad = format!("{head}\n{{\"type\":\"packet\",\"t\":10,\"kind\":\"adv\"}}\n{{\"type\":\"packet\",\"t\":18446744073709551615,\"kind\":\"adv\"}}\n");
+        let e = read(bad.as_bytes()).unwrap_err();
+        assert!(e.starts_with("line 3:"), "{e}");
+    }
 
     #[test]
     fn round_trip() {

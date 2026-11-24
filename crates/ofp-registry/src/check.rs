@@ -138,7 +138,7 @@ fn check_vectors(reg: &Registry, table: &str, path: &Path, errors: &mut Vec<Stri
 
 /// Decoded values of one field around a moment: a person reads a console, then types.
 fn around<'a>(timeline: &'a [Decoded], field: &'a str, t: u64) -> impl Iterator<Item = f64> + 'a {
-    timeline.iter().filter(move |d| !d.stale && d.t + 8000 >= t && d.t <= t + 2000).filter_map(move |d| d.fields.get(field).copied())
+    timeline.iter().filter(move |d| !d.stale && d.t.saturating_add(8000) >= t && d.t <= t.saturating_add(2000)).filter_map(move |d| d.fields.get(field).copied())
 }
 
 pub struct CaptureResult {
@@ -687,15 +687,15 @@ mod tests {
     #[test]
     fn the_tymewear_draft_decodes_a_breath_and_skips_the_other_packets() {
         let reg = registry::load(&registry_dir()).unwrap();
-        // a breath: inhale 1.50 s, exhale 2.50 s, raw tidal volume 180 → 15 breaths/min, 1.80 L, 27 L/min
-        let breath = "01 10000000 9600 fa00 b400 b400 0000 0000";
+        // a breath: rate 35.0 br/min (both rate values), raw tidal volume 180 → 35 breaths/min, 1.80 L, 63 L/min
+        let breath = "01 10000000 5e01 5e01 b400 b400 3f00 3f00";
         let movement = "02 10000000 0000 0000 0000 0000";
         let lines = connected_capture("TYME-1A2B", "40b50000-30b5-11e5-a151-feff819cdc90", "40b50004-30b5-11e5-a151-feff819cdc90", &[movement, breath, movement], &[]);
         let r = check_lines(&reg, None, "test", &lines);
         assert_eq!(r.decoded, 1, "only the breath packet");
         let (source, v) = last_values(&reg, &lines);
         assert!(source.starts_with("tymewear-vitalpro:"));
-        assert_eq!((v["breathing_rate"], v["tidal_volume"], v["minute_ventilation"]), (15.0, 1.8, 27.0));
+        assert_eq!((v["breathing_rate"], v["tidal_volume"], v["minute_ventilation"]), (35.0, 1.8, 63.0));
         // the strap's heart-rate pod is not this table's: the standard Heart Rate table reads it
         let pod = connected_capture("TymeHR 55", "180d", "2a37", &["0048"], &[]);
         let (source, v) = last_values(&reg, &pod);
@@ -707,7 +707,7 @@ mod tests {
     fn an_owners_verdict_on_a_connected_sensor_is_held_to_like_any_other() {
         let reg = registry::load(&registry_dir()).unwrap();
         let wrong = r#"{"type":"confirm","t":1500,"source_id":"tymewear-vitalpro:live","field":"tidal_volume","shown":1.8,"console":0.9,"ok":false}"#;
-        let lines = connected_capture("TYME-1A2B", "40b50000-30b5-11e5-a151-feff819cdc90", "40b50004-30b5-11e5-a151-feff819cdc90", &["01 10000000 9600 fa00 b400 b400 0000 0000"], &[wrong]);
+        let lines = connected_capture("TYME-1A2B", "40b50000-30b5-11e5-a151-feff819cdc90", "40b50004-30b5-11e5-a151-feff819cdc90", &["01 10000000 5e01 5e01 b400 b400 3f00 3f00"], &[wrong]);
         let r = check_lines(&reg, None, "test", &lines);
         assert!(r.errors.iter().any(|e| e.contains("marked tidal_volume wrong") && e.contains("console showed 0.9")), "{:#?}", r.errors);
     }
