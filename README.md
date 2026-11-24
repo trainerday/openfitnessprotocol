@@ -21,7 +21,16 @@ treadmill's speed: your app keeps doing that the way it does now. Control may co
 
 ## Devices
 
-✅ **Verified device types** (each type checked on a real device, not every model):
+✅ **In the package today** (`@openfitnessprotocol/ofp`, what an app that installs it reads):
+
+| Device | What OFP reads | Checked by |
+|---|---|---|
+| Keiser M3i indoor bike | power, cadence, heart rate, gear, energy, distance, time | a recording from a real bike |
+| CORE body temperature sensor (broadcast and connected) | core and skin temperature, heart rate, heat strain | the maker's specification and test vectors; waiting for a rider's recording |
+| Tymewear VitalPro breathing sensor | breathing rate, tidal volume, ventilation | open readers' findings and test vectors; waiting for a rider's recording |
+
+🔄 **Standard sensors, being verified** (the tables are written from the Bluetooth standards and read in OFP
+Studio; each goes into the package once a recording from a real device is in):
 
 | Device | What OFP reads |
 |---|---|
@@ -29,7 +38,6 @@ treadmill's speed: your app keeps doing that the way it does now. Control may co
 | Power meters (the Bluetooth Cycling Power standard) | power, cadence |
 | Speed and cadence sensors (the Bluetooth standard) | speed, cadence |
 | Spin bikes and indoor bikes with the Bluetooth fitness machine standard (FTMS): Schwinn IC4 / Bowflex C6, Stages, newer Yesoul and Domyos bikes, and many more | power, cadence, speed, distance, resistance, heart rate |
-| Keiser M3i indoor bike | power, cadence, heart rate, gear, energy, distance, time |
 | Rowers with FTMS (Concept2 and others) | stroke rate, stroke count, power, distance |
 | Treadmills with FTMS | speed, incline, distance |
 
@@ -43,8 +51,6 @@ findings; no owner has checked one in OFP Studio yet):
 | Device | What OFP reads |
 |---|---|
 | Running speed and cadence sensors (the Bluetooth standard) | speed, running cadence |
-| CORE body temperature sensor | core and skin temperature, heart rate, heat strain |
-| Tymewear VitalPro breathing sensor | breathing rate, tidal volume, ventilation |
 | Domyos bikes without FTMS, older Yesoul bikes, iConsole+ consoles, Nautilus bikes | power or speed, cadence, resistance (each as it sends) |
 | Inspire IC, XCX and Chrono bikes | cadence, resistance, and power or speed where sent |
 
@@ -258,8 +264,8 @@ Status: two apps use it, both unreleased branches of TrainerDay's own: the deskt
 the core as WebAssembly) and the Android app (React Native, where there is no WebAssembly, so the
 same core runs as plain JavaScript). In both, the wiring is one small file. What works today is
 broadcast devices that fill the usual places (power, cadence). The core can also read devices that
-are connected to, and the Studio uses that; the two apps do not yet. The list of services is passed
-in but not acted on, and the "Extras" devices are designed, not built.
+are connected to, and the Studio uses that; the two apps do not yet. The core leaves alone the services
+an app says it reads itself; the "Extras" devices are designed, not built.
 The [design document](docs/design.md) has the details.
 
 ## Add your own device: a vibecoder-first project
@@ -385,7 +391,8 @@ language in the [design document](docs/design.md#the-table-language).
 
 - Official values never change meaning. New ones can always be added.
 - The official collection holds tables only, never code.
-- Every table comes with a real recording, and the checks replay it.
+- A table comes with a real recording, and the checks replay it. Until it has one it is a draft
+  (left out of the package) or, when test vectors check it, `experimental`.
 - A table is your own work: made from your own recordings or the maker's public documentation,
   never copied from another project's code.
 - A table is **submitted**, then **confirmed** by a second person, then **field-proven** when apps

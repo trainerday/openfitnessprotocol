@@ -45,11 +45,11 @@ A `01` packet:
 |---|---|
 | 0 | `01` |
 | 1–4 | time stamp, unsigned 32-bit, in ticks of 40 ms |
-| 5–6 | inhale duration, raw units |
-| 7–8 | exhale duration, raw units |
+| 5–6 | breathing rate, tenths of a breath per minute (an owner's recording, 2026-11-24; was thought to be the inhale duration) |
+| 7–8 | breathing rate again, tenths (per breath or smoothed: which is which is not known yet; was thought to be the exhale duration) |
 | 9–10 | tidal volume, raw |
 | 11–12 | the same value as 9–10 again |
-| 13–14 | unknown |
+| 13–14 | the sensor's own minute ventilation: equal to rate × tidal volume (an owner's recording, 2026-11-24) |
 | 15–16 | the same value as 13–14 again |
 
 ## Turning the raw values into measurements
@@ -62,3 +62,12 @@ A `01` packet:
   approximation, not a calibrated number of litres.
 - **Minute ventilation**: breathing rate × tidal volume.
 - **Inhale to exhale ratio**: inhale duration ÷ exhale duration.
+
+## Corrected by a sensor (2026-11-24)
+
+The first owner to record a sensor (TYME-A220) found that bytes 5–8 are not inhale and exhale
+durations. They are the breathing rate in tenths of a breath per minute, which they checked against
+the time between breath packets (one packet per breath). Read as durations, `6000 / (A + B)` gives
+300 / rate, which on a ride (25–48 br/min) is a quarter to an eighth of the real rate. Bytes 13–14
+equal rate × tidal volume. Still open: which of the two rate values the Tymewear app shows, and a
+value from 86 to 154 sent about once a second (probably in the `02` packet).

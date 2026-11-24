@@ -1,8 +1,9 @@
 # @openfitnessprotocol/ofp
 
-Open Fitness Protocol for JavaScript apps: read fitness devices from your app's own Bluetooth (heart rate
-straps, power meters, speed and cadence sensors, FTMS bikes, rowers and treadmills, and devices the
-community adds as tables). Reading only: OFP never controls a device. Apache-2.0, no dependencies.
+Open Fitness Protocol for JavaScript apps: read fitness devices from your app's own Bluetooth, from
+tables in the registry. This version reads the Keiser M3i, CORE and Tymewear; the standard heart rate,
+power, speed and cadence and FTMS tables join as their recordings come in, and so do devices the
+community adds. Reading only: OFP never controls a device. Apache-2.0, no dependencies.
 Project and device list: https://openfitnessprotocol.org
 
 ```sh

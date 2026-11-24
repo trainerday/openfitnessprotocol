@@ -1,18 +1,20 @@
 id: tymewear-vitalpro
 name: Tymewear VitalPro breathing sensor
 reader: notify
-version: 1
-# Experimental: written from a description of the protocol, not yet tried on a sensor. The first
-# owner's recording becomes its capture.
+version: 2
+# Experimental. Version 2 (2026-11-24) follows the first owner's findings on a real sensor (TYME-A220):
+# version 1 read bytes 5-8 as inhale and exhale durations and showed rate and ventilation at about a
+# quarter of the real values. The owner's recording, once sent, becomes its capture.
 status: experimental
 
 provenance: >
   Facts in tymewear-vitalpro.spec.md, which were learned from studying the open-source readers
   k-breathe and Tyme4All (MIT). This table was written from that description only, not from their
-  code. The maker has published no specification. Re-checked on 2026-11-21 against k-breathe's
-  current Protocol.kt: the data is on 40B50004, the layout and scales as below, no handshake.
+  code. The maker has published no specification. Version 2: the meaning of bytes 5-8 and 13-14 comes
+  from the first owner's own recording of a sensor (rate checked against the time between breath
+  packets; bytes 13-14 equal rate x tidal volume), reported 2026-11-24.
 verified_on:
-  - not verified on a sensor yet (vectors check this table's arithmetic only)
+  - "TYME-A220: decoded by its owner (25-48 br/min, 33-108 L/min on a ride); not yet compared with the Tymewear app"
 
 # The breathing sensor of the chest strap ("TYME-xxxx"). The strap's heart-rate pod ("TymeHR …") is a
 # separate, ordinary heart-rate monitor and needs no table.
@@ -30,22 +32,24 @@ notify:
 # first test with a sensor shows it.
 # Several kinds of packet arrive on this characteristic; byte 0 says which. Kind 1 is one breath:
 #   1-4    time stamp, 40 ms ticks
-#   5-6    inhale duration, hundredths of a second
-#   7-8    exhale duration, hundredths of a second
-#   9-10   tidal volume, raw
+#   5-6    breathing rate, tenths of a breath per minute
+#   7-8    breathing rate again, tenths (one of the two is per breath, the other smoothed; which one
+#          the Tymewear app shows is not known yet)
+#   9-10   tidal volume, raw (x 0.01 = litres)
+#   13-14  the sensor's own minute ventilation (= rate x tidal volume)
 only_when: u8[0] == 1
 
 # One packet per breath, every 2 to 4 seconds at rest: silent only after several missed breaths.
 stale_after_ms: 20000
 
 fields:
-  # From the length of this breath. (The readers this was learned from prefer the time between two
-  # packets; a table reads one packet at a time, so it uses the durations inside it.)
   breathing_rate:
-    value: 6000 / (u16le[5] + u16le[7])
-    only_when: u16le[5] + u16le[7] > 0
+    value: u16le[5] / 10
+    only_when: u16le[5] > 0
   # The scale (x 0.01) was found by others by comparing with the maker's own files: approximate.
   tidal_volume: u16le[9] / 100
+  # Rate x tidal volume, which is what the sensor sends in bytes 13-14 (computed here, so it does not
+  # depend on that value's scale).
   minute_ventilation:
-    value: 60 * u16le[9] / (u16le[5] + u16le[7])
-    only_when: u16le[5] + u16le[7] > 0
+    value: u16le[5] / 10 * u16le[9] / 100
+    only_when: u16le[5] > 0

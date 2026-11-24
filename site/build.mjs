@@ -150,24 +150,21 @@ function home(latest) {
 <section>
   <h2>Devices</h2>
   <div class="cards devices">
-    <div class="card yes"><h3><span class="mark-yes" aria-hidden="true">✓</span> Verified device types</h3>
-      <p class="small">Each type checked on a real device, not every model.</p>
+    <div class="card yes"><h3><span class="mark-yes" aria-hidden="true">✓</span> In the package today</h3>
+      <p class="small">What an app that installs <code>@openfitnessprotocol/ofp</code> reads.</p>
       <ul>
-        <li><b>Heart rate straps</b> (Garmin, Polar and others): heart rate and RR intervals for HRV</li>
-        <li><b>Power meters</b>: power, cadence</li>
-        <li><b>Speed and cadence sensors</b></li>
-        <li><b>Spin bikes and indoor bikes</b> with the Bluetooth fitness machine standard (FTMS): Schwinn IC4 / Bowflex C6, Stages, newer Yesoul and Domyos, and many more</li>
-        <li><b>Keiser M3i</b> bike</li>
-        <li><b>Rowers with FTMS</b>: Concept2 and others</li>
-        <li><b>Treadmills with FTMS</b></li>
+        <li><b>Keiser M3i</b> bike: checked with a recording from a real bike</li>
+        <li><b>CORE body temperature sensor</b>: from the maker's specification, checked by test vectors</li>
+        <li><b>Tymewear VitalPro breathing sensor</b>: from open readers' findings, checked by test vectors</li>
       </ul>
     </div>
-    <div class="card maybe"><h3><span class="mark-maybe" aria-hidden="true">✓</span> Supported, not yet verified</h3>
-      <p class="small">OFP reads them; no owner has checked one yet.</p>
+    <div class="card maybe"><h3><span class="mark-maybe" aria-hidden="true">✓</span> Being verified</h3>
+      <p class="small">OFP Studio reads them; each goes into the package once a recording from a real device is in.</p>
       <ul>
-        <li>Running speed and cadence sensors</li>
-        <li>CORE body temperature sensor</li>
-        <li>Tymewear VitalPro breathing sensor</li>
+        <li><b>Heart rate straps</b> (Garmin, Polar and others): heart rate and RR intervals for HRV</li>
+        <li><b>Power meters</b>, <b>speed and cadence sensors</b>, running speed and cadence sensors</li>
+        <li><b>Spin bikes and indoor bikes</b> with the Bluetooth fitness machine standard (FTMS): Schwinn IC4 / Bowflex C6, Stages, newer Yesoul and Domyos, and many more</li>
+        <li><b>Rowers</b> (Concept2 and others) and <b>treadmills</b> with FTMS</li>
         <li>Domyos bikes without FTMS, older Yesoul, iConsole+ consoles, Nautilus</li>
         <li>Inspire IC, XCX, Chrono bikes</li>
       </ul>
@@ -306,7 +303,7 @@ function developers() {
     body: `
 <div class="hero">
   <h1>Add OFP to your app</h1>
-  <p class="lead">One library reads every device in the registry: heart rate straps, power meters, FTMS bikes, rowers and treadmills, and the devices the community adds. You wire four hooks to your app's own Bluetooth once. New devices come with a version bump.</p>
+  <p class="lead">One library reads every checked device in the registry: today the Keiser M3i, CORE and Tymewear; heart rate straps, power meters, FTMS bikes, rowers and treadmills as their recordings come in, and the devices the community adds. You wire four hooks to your app's own Bluetooth once. New devices come with a version bump.</p>
   <pre class="code install-big"><code>npm install @openfitnessprotocol/ofp</code></pre>
   <p class="small">No dependencies · Apache-2.0 · reading only, never control · <a href="https://www.npmjs.com/package/@openfitnessprotocol/ofp">npm</a> · <a href="${REPO}">GitHub</a></p>
 </div>

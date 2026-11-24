@@ -1,18 +1,25 @@
 # Built from tymewear-vitalpro.spec.md, not captured from a sensor: they check this table's
 # arithmetic, not the protocol.
-- name: one breath, 1.5 s in and 2.5 s out, raw tidal volume 180
+- name: one breath at 35.0 br/min, raw tidal volume 180 (the sensor's own VE, 63, in bytes 13-14)
   device_name: TYME-1A2B
-  notification: "01 E8030000 9600 FA00 B400 B400 0000 0000"
+  notification: "01 E8030000 5E01 5E01 B400 B400 3F00 3F00"
   expect:
     source_id: "tymewear-vitalpro:vector"
-    fields: { breathing_rate: 15, tidal_volume: 1.8, minute_ventilation: 27 }
+    fields: { breathing_rate: 35, tidal_volume: 1.8, minute_ventilation: 63 }
+
+- name: hard breathing, 48.0 br/min and 2.25 L
+  device_name: TYME-1A2B
+  notification: "01 E8030000 E001 DA01 E100 E100 6C00 6C00"
+  expect:
+    source_id: "tymewear-vitalpro:vector"
+    fields: { breathing_rate: 48, tidal_volume: 2.25, minute_ventilation: 108 }
 
 - name: a movement packet is not a breath
   device_name: TYME-1A2B
   notification: "02 E8030000 0000 0000 0000 0000"
   expect: none
 
-- name: a breath with no durations gives no rate
+- name: a breath with no rate gives no rate and no ventilation
   device_name: TYME-1A2B
   notification: "01 E8030000 0000 0000 B400 B400 0000 0000"
   expect:
