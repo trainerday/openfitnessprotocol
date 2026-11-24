@@ -7,6 +7,15 @@ How to write it: one line per thing a user would notice, new things first, at mo
 fixes are folded into a last "Bug fixes and improvements". Notes for the next release go under `## Next`;
 `scripts/release.sh` turns that heading into the version and date.
 
+## Next
+
+- Tymewear VitalPro: breathing rate and minute ventilation are now read correctly. They were shown at a
+  quarter to an eighth of the real values (found with the first real sensor).
+- OFP Studio is safer to leave running: only its own window or page can use it, and recordings open by name.
+- Recordings and tables sent by others can no longer hang or crash OFP Studio or the `ofp` command.
+- The site and the package's notes say which devices the package reads today.
+- Bug fixes and improvements.
+
 ## 0.2.3 (2026-11-21)
 
 - CORE body temperature sensors, read from their advertisement (core temperature) or connected (also skin
